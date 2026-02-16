@@ -175,3 +175,35 @@ class TestGetGame:
         state = await engine.get_game(create.game_id)
         assert state is not None
         assert state.player_name == "Hero"
+
+
+class TestFirestoreIntegration:
+    async def test_saves_and_loads_from_firestore(self, engine_with_firestore, mock_firestore):
+        """Create a game with a firestore-backed engine and verify
+        firestore.save_game was called."""
+        resp = await engine_with_firestore.create_game("Hero", "fantasy")
+        mock_firestore.save_game.assert_called_once()
+        call_args = mock_firestore.save_game.call_args
+        assert call_args[0][0] == resp.game_id
+
+    async def test_firestore_failure_graceful(self, mock_gemini_service):
+        """When firestore raises an exception on save, the game should still
+        work via in-memory fallback."""
+        failing_firestore = AsyncMock()
+        failing_firestore.save_game = AsyncMock(side_effect=Exception("Firestore down"))
+        failing_firestore.load_game = AsyncMock(return_value=None)
+
+        engine = GameEngine(
+            gemini_service=mock_gemini_service,
+            firestore_service=failing_firestore,
+        )
+
+        # create_game should succeed despite firestore failure
+        resp = await engine.create_game("Hero", "fantasy")
+        assert resp.game_id is not None
+        assert resp.health == 100
+
+        # The game should still be retrievable from in-memory store
+        state = await engine.get_game(resp.game_id)
+        assert state is not None
+        assert state.player_name == "Hero"

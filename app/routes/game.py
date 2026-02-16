@@ -18,6 +18,7 @@ async def start_game(
     request: GameStartRequest,
     engine: GameEngine = Depends(get_game_engine),
 ) -> GameResponse:
+    """Start a new game session with the specified genre and player name."""
     try:
         return await engine.create_game(request.player_name, request.genre)
     except Exception as e:
@@ -30,6 +31,7 @@ async def take_action(
     request: ActionRequest,
     engine: GameEngine = Depends(get_game_engine),
 ) -> GameResponse:
+    """Process a player action and return the updated game state."""
     try:
         return await engine.process_action(request.game_id, request.action)
     except GameNotFoundError:
@@ -46,6 +48,7 @@ async def get_game(
     game_id: str,
     engine: GameEngine = Depends(get_game_engine),
 ) -> GameResponse:
+    """Retrieve the current state of an existing game."""
     state = await engine.get_game(game_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -54,6 +57,7 @@ async def get_game(
 
 @router.post("/tts", response_model=TTSResponse)
 async def text_to_speech(request: TTSRequest) -> TTSResponse:
+    """Convert narrative text to speech audio using Google Cloud TTS."""
     tts = get_tts_service()
     if tts is None:
         raise HTTPException(status_code=503, detail="Text-to-Speech service is not enabled")

@@ -10,6 +10,14 @@ from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
 
+# File extensions considered static assets.
+_STATIC_EXTENSIONS = (".css", ".js", ".ico", ".png", ".jpg", ".svg", ".woff2")
+
+
+def _is_static_asset(path: str) -> bool:
+    """Return True if the path looks like a static file request."""
+    return path.startswith("/static") or path.endswith(_STATIC_EXTENSIONS)
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Adds defensive security headers to all responses."""
@@ -32,6 +40,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "connect-src 'self'; "
             "font-src 'self'"
         )
+        # HSTS: instruct browsers to always use HTTPS (1 year).
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        # Cache static assets aggressively at the browser / CDN layer.
+        if request.url.path.endswith(_STATIC_EXTENSIONS):
+            response.headers["Cache-Control"] = "public, max-age=86400"
         return response
 
 
@@ -45,7 +60,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if request.url.path.startswith("/static") or request.url.path == "/api/health":
+        # Skip rate limiting for static assets and health checks.
+        if _is_static_asset(request.url.path) or request.url.path == "/api/health":
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"
@@ -77,12 +93,17 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration_ms = round((time.monotonic() - start) * 1000, 1)
 
-        if not request.url.path.startswith("/static"):
+        if not _is_static_asset(request.url.path):
+            # Extract Cloud Trace context propagated by Cloud Run.
+            trace_header = request.headers.get("x-cloud-trace-context", "")
+            trace_id = trace_header.split("/")[0] if trace_header else ""
+
             logger.info(
-                "%s %s -> %d (%.1fms)",
+                "%s %s -> %d (%.1fms) trace=%s",
                 request.method,
                 request.url.path,
                 response.status_code,
                 duration_ms,
+                trace_id or "none",
             )
         return response

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 _gemini_service: GeminiService | None = None
 _game_engine: GameEngine | None = None
+_tts_service = None
 
 
 def get_gemini_service() -> GeminiService:
@@ -38,10 +39,14 @@ def get_game_engine() -> GameEngine:
 
 def get_tts_service():
     """Returns TTSService if enabled, None otherwise."""
+    global _tts_service
     if not settings.enable_tts:
         return None
-    from app.services.tts_service import TTSService
-    return TTSService()
+    if _tts_service is None:
+        from app.services.tts_service import TTSService
+        _tts_service = TTSService()
+        logger.info("Initialized TTSService")
+    return _tts_service
 
 
 def _init_firestore():

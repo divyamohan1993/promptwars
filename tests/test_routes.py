@@ -36,6 +36,17 @@ class TestStartGame:
         resp = await client.post("/api/game/start", json={"player_name": "", "genre": "fantasy"})
         assert resp.status_code == 422
 
+    async def test_all_genres_work(self, client):
+        for genre in Genre:
+            resp = await client.post(
+                "/api/game/start",
+                json={"player_name": "Hero", "genre": genre.value},
+            )
+            assert resp.status_code == 200, f"Genre {genre.value} failed"
+            data = resp.json()
+            assert data["is_alive"] is True
+            assert "game_id" in data
+
 
 class TestTakeAction:
     async def test_processes_action(self, client, mock_gemini_response):
@@ -58,6 +69,24 @@ class TestTakeAction:
         resp = await client.post("/api/game/action", json={"game_id": game_id, "action": "Fight"})
         assert resp.json()["health"] == 85
 
+    async def test_dead_game_returns_400(self, client, mock_gemini_service, mock_gemini_response):
+        """Start a game, kill the player via massive damage, then verify
+        further actions return 400 (game over)."""
+        start = await client.post("/api/game/start", json={"player_name": "Hero", "genre": "fantasy"})
+        game_id = start.json()["game_id"]
+        # Set response so the player takes lethal damage
+        mock_gemini_service.generate_response.return_value = {
+            **mock_gemini_response,
+            "health_delta": -200,
+            "is_complete": False,
+        }
+        death_resp = await client.post("/api/game/action", json={"game_id": game_id, "action": "Walk into trap"})
+        assert death_resp.json()["health"] == 0
+        assert death_resp.json()["is_alive"] is False
+        # Now try another action on the dead game
+        resp = await client.post("/api/game/action", json={"game_id": game_id, "action": "Try again"})
+        assert resp.status_code == 400
+
 
 class TestGetGame:
     async def test_returns_game_state(self, client):
@@ -79,4 +108,8 @@ class TestTTS:
 
     async def test_tts_empty_text_returns_422(self, client):
         resp = await client.post("/api/game/tts", json={"text": ""})
+        assert resp.status_code == 422
+
+    async def test_tts_text_too_long_returns_422(self, client):
+        resp = await client.post("/api/game/tts", json={"text": "A" * 2001})
         assert resp.status_code == 422

@@ -20,6 +20,7 @@ class GameEngine:
         self._firestore = firestore_service
 
     async def create_game(self, player_name: str, genre: str | Genre) -> GameResponse:
+        """Create a new game and generate the opening narrative via Gemini."""
         game_id = str(uuid.uuid4())
         genre_str = genre.value if isinstance(genre, Genre) else str(genre)
 
@@ -46,6 +47,7 @@ class GameEngine:
         return self._to_response(state)
 
     async def process_action(self, game_id: str, action: str) -> GameResponse:
+        """Process a player action, update state, and generate the next narrative."""
         state = await self._load_state(game_id)
         if state is None:
             raise GameNotFoundError(game_id)
@@ -84,6 +86,7 @@ class GameEngine:
         return self._to_response(state)
 
     async def get_game(self, game_id: str) -> GameState | None:
+        """Retrieve game state by ID, checking Firestore if not in memory."""
         return await self._load_state(game_id)
 
     async def _save_state(self, game_id: str, state: GameState) -> None:

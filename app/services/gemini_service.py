@@ -61,6 +61,7 @@ class GeminiService:
         )
 
     async def generate_opening(self, genre: str, player_name: str) -> dict[str, Any]:
+        """Generate the opening narrative for a new adventure."""
         theme = GENRE_THEMES.get(genre, GENRE_THEMES["fantasy"])
         prompt = (
             f"Begin a new {genre} text adventure set in {theme}. "
@@ -72,6 +73,7 @@ class GeminiService:
         return await self._generate(prompt)
 
     async def generate_response(self, game_state: dict, player_action: str) -> dict[str, Any]:
+        """Generate the next narrative based on current state and player action."""
         history_summary = self._build_history_context(game_state)
         prompt = (
             f"Continue the {game_state['genre']} adventure for player {game_state['player_name']}.\n\n"

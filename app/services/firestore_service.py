@@ -18,11 +18,13 @@ class FirestoreService:
         self._collection = settings.firestore_collection
 
     async def save_game(self, game_id: str, state: dict[str, Any]) -> None:
+        """Persist game state to Firestore."""
         doc_ref = self._db.collection(self._collection).document(game_id)
         await doc_ref.set(state)
         logger.info("Saved game %s to Firestore", game_id)
 
     async def load_game(self, game_id: str) -> dict[str, Any] | None:
+        """Load game state from Firestore by game ID."""
         doc_ref = self._db.collection(self._collection).document(game_id)
         doc = await doc_ref.get()
         if doc.exists:
@@ -30,6 +32,7 @@ class FirestoreService:
         return None
 
     async def delete_game(self, game_id: str) -> None:
+        """Delete a game document from Firestore."""
         doc_ref = self._db.collection(self._collection).document(game_id)
         await doc_ref.delete()
         logger.info("Deleted game %s from Firestore", game_id)

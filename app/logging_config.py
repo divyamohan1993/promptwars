@@ -20,6 +20,11 @@ class CloudJSONFormatter(logging.Formatter):
             "function": record.funcName,
             "line": record.lineno,
         }
+        # Correlate log entries with Cloud Trace spans when a trace_id is
+        # attached to the record (typically set by RequestLoggingMiddleware).
+        trace_id = getattr(record, "trace_id", None)
+        if trace_id:
+            entry["logging.googleapis.com/trace"] = trace_id
         if record.exc_info and record.exc_info[0] is not None:
             entry["exception"] = self.formatException(record.exc_info)
         return json.dumps(entry)
