@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="QuestForge - An AI-Powered Text Adventure game built with Google Gemini. Choose your genre and embark on a unique adventure.">
+  <meta name="theme-color" content="#0f0e17">
+  <title>QuestForge — AI-Powered Text Adventure</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Skip to content link for accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Live region for screen reader announcements -->
+  <div id="sr-announcer" class="sr-only" aria-live="assertive" aria-atomic="true" role="status"></div>
+
+  <!-- Header -->
+  <header class="site-header" role="banner">
+    <div class="header-inner">
+      <h1 class="site-title">
+        <span class="title-icon" aria-hidden="true">&#9876;</span>
+        QuestForge
+      </h1>
+      <p class="site-tagline">AI-Powered Text Adventure</p>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main id="main-content" role="main">
+
+    <!-- ==================== START SCREEN ==================== -->
+    <section id="start-screen" class="screen screen--active" aria-labelledby="start-heading">
+      <div class="container">
+        <div class="welcome-card">
+          <h2 id="start-heading" class="screen-heading">Embark on Your Adventure</h2>
+          <p class="welcome-text">
+            Welcome, brave adventurer! QuestForge uses the power of Google Gemini AI to craft
+            a unique, branching narrative just for you. Every choice matters, every path is different.
+            Enter your name, choose your genre, and let the quest begin.
+          </p>
+
+          <!-- Player Name Input -->
+          <div class="form-group">
+            <label for="player-name" class="form-label">Your Name</label>
+            <input
+              type="text"
+              id="player-name"
+              class="form-input"
+              placeholder="Enter your adventurer name..."
+              required
+              autocomplete="off"
+              maxlength="30"
+              aria-required="true"
+              aria-describedby="name-hint"
+            >
+            <span id="name-hint" class="form-hint">Choose a name for your character (required)</span>
+          </div>
+
+          <!-- Genre Selection -->
+          <fieldset class="genre-fieldset">
+            <legend class="genre-legend">Choose Your Genre</legend>
+            <div class="genre-grid" role="radiogroup" aria-label="Game genre selection">
+
+              <label class="genre-card" data-genre="fantasy">
+                <input type="radio" name="genre" value="fantasy" class="genre-radio sr-only" aria-label="Fantasy genre">
+                <span class="genre-icon" aria-hidden="true">&#129668;</span>
+                <span class="genre-name">Fantasy</span>
+                <span class="genre-desc">Swords, sorcery &amp; dragons</span>
+              </label>
+
+              <label class="genre-card" data-genre="sci-fi">
+                <input type="radio" name="genre" value="sci-fi" class="genre-radio sr-only" aria-label="Sci-Fi genre">
+                <span class="genre-icon" aria-hidden="true">&#128640;</span>
+                <span class="genre-name">Sci-Fi</span>
+                <span class="genre-desc">Space exploration &amp; tech</span>
+              </label>
+
+              <label class="genre-card" data-genre="mystery">
+                <input type="radio" name="genre" value="mystery" class="genre-radio sr-only" aria-label="Mystery genre">
+                <span class="genre-icon" aria-hidden="true">&#128270;</span>
+                <span class="genre-name">Mystery</span>
+                <span class="genre-desc">Clues, secrets &amp; intrigue</span>
+              </label>
+
+              <label class="genre-card" data-genre="horror">
+                <input type="radio" name="genre" value="horror" class="genre-radio sr-only" aria-label="Horror genre">
+                <span class="genre-icon" aria-hidden="true">&#128128;</span>
+                <span class="genre-name">Horror</span>
+                <span class="genre-desc">Fear, survival &amp; the unknown</span>
+              </label>
+
+              <label class="genre-card" data-genre="pirate">
+                <input type="radio" name="genre" value="pirate" class="genre-radio sr-only" aria-label="Pirate genre">
+                <span class="genre-icon" aria-hidden="true">&#9876;&#65039;</span>
+                <span class="genre-name">Pirate</span>
+                <span class="genre-desc">High seas &amp; treasure hunts</span>
+              </label>
+
+            </div>
+          </fieldset>
+
+          <!-- Validation message -->
+          <div id="start-error" class="error-message" role="alert" aria-live="polite" hidden></div>
+
+          <!-- Begin Quest Button -->
+          <button id="btn-start" class="btn btn--primary btn--large" type="button" aria-label="Begin your quest">
+            <span class="btn-text">Begin Quest</span>
+            <span class="btn-icon" aria-hidden="true">&#10132;</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== GAME SCREEN ==================== -->
+    <section id="game-screen" class="screen" aria-labelledby="game-heading" hidden>
+      <div class="container game-layout">
+
+        <!-- Stats Bar -->
+        <div class="stats-bar" role="region" aria-label="Player statistics">
+          <h2 id="game-heading" class="sr-only">Game in Progress</h2>
+
+          <div class="stat stat--health">
+            <span class="stat-label" id="health-label">Health</span>
+            <div class="health-bar-wrapper" role="progressbar" aria-labelledby="health-label" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+              <div class="health-bar" id="health-bar" style="width: 100%;">
+                <span class="health-text" id="health-text">100</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat stat--inventory">
+            <span class="stat-label">Inventory</span>
+            <div class="inventory-list" id="inventory" role="list" aria-label="Inventory items">
+              <span class="inventory-empty" role="listitem">Empty</span>
+            </div>
+          </div>
+
+          <div class="stat stat--turn">
+            <span class="stat-label">Turn</span>
+            <span class="turn-counter" id="turn-counter" aria-label="Current turn number">0</span>
+          </div>
+        </div>
+
+        <!-- Narrative Area -->
+        <div class="narrative-wrapper">
+          <div
+            id="narrative"
+            class="narrative"
+            role="log"
+            aria-label="Story narrative"
+            aria-live="polite"
+            tabindex="0"
+          >
+            <p class="narrative-placeholder">Your adventure awaits...</p>
+          </div>
+
+          <!-- History Toggle -->
+          <button
+            id="btn-history"
+            class="btn btn--ghost btn--small"
+            type="button"
+            aria-expanded="false"
+            aria-controls="history-panel"
+          >
+            <span aria-hidden="true">&#128220;</span> Story History
+          </button>
+
+          <!-- History Panel -->
+          <div id="history-panel" class="history-panel" role="region" aria-label="Story history" hidden>
+            <div id="history-content" class="history-content"></div>
+          </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="loading" role="status" hidden>
+          <div class="loading-spinner" aria-hidden="true">
+            <span class="spinner-dot"></span>
+            <span class="spinner-dot"></span>
+            <span class="spinner-dot"></span>
+          </div>
+          <span class="loading-text">The quest master is weaving your fate...</span>
+        </div>
+
+        <!-- Choices Area -->
+        <div id="choices" class="choices" role="group" aria-label="Available actions">
+          <!-- Choice buttons injected by JS -->
+        </div>
+
+        <!-- Free Input Area -->
+        <div class="free-input-area">
+          <label for="custom-action" class="sr-only">Type a custom action</label>
+          <div class="input-row">
+            <input
+              type="text"
+              id="custom-action"
+              class="form-input form-input--action"
+              placeholder="Type your own action..."
+              autocomplete="off"
+              maxlength="200"
+              aria-describedby="action-hint"
+            >
+            <button id="btn-custom-action" class="btn btn--secondary" type="button" aria-label="Submit custom action">
+              Custom Action
+            </button>
+          </div>
+          <span id="action-hint" class="form-hint">Or describe what you want to do in your own words</span>
+        </div>
+
+        <!-- Error display for game screen -->
+        <div id="game-error" class="error-message" role="alert" aria-live="polite" hidden></div>
+
+      </div>
+    </section>
+
+    <!-- ==================== GAME OVER SCREEN ==================== -->
+    <section id="gameover-screen" class="screen" aria-labelledby="gameover-heading" hidden>
+      <div class="container">
+        <div class="gameover-card">
+          <div id="gameover-icon" class="gameover-icon" aria-hidden="true"></div>
+          <h2 id="gameover-heading" class="screen-heading"></h2>
+          <p id="gameover-message" class="gameover-message"></p>
+
+          <!-- Stats Summary -->
+          <div class="gameover-stats" role="region" aria-label="Game summary">
+            <h3 class="gameover-stats-heading">Quest Summary</h3>
+            <dl class="stats-summary">
+              <div class="summary-item">
+                <dt>Turns Survived</dt>
+                <dd id="summary-turns">0</dd>
+              </div>
+              <div class="summary-item">
+                <dt>Final Health</dt>
+                <dd id="summary-health">0</dd>
+              </div>
+              <div class="summary-item">
+                <dt>Items Collected</dt>
+                <dd id="summary-items">0</dd>
+              </div>
+              <div class="summary-item">
+                <dt>Genre</dt>
+                <dd id="summary-genre">—</dd>
+              </div>
+            </dl>
+          </div>
+
+          <button id="btn-play-again" class="btn btn--primary btn--large" type="button" aria-label="Start a new adventure">
+            <span class="btn-text">Play Again</span>
+            <span class="btn-icon" aria-hidden="true">&#8635;</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer" role="contentinfo">
+    <p class="footer-credit">
+      Powered by <strong>Google Gemini</strong> &middot; Built for PromptWars Hackathon
+    </p>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
