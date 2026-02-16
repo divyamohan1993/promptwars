@@ -1,3 +1,5 @@
+"""Google Gemini AI integration for dynamic story generation."""
+
 import json
 import logging
 from typing import Any

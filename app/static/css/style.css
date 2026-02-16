@@ -1127,3 +1127,14 @@ a {
   pointer-events: none;
   opacity: 0.6;
 }
+
+/* Narrate button states */
+.btn-narrating {
+  color: var(--color-accent);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

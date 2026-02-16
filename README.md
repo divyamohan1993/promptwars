@@ -14,50 +14,66 @@
 2. **AI Storytelling**: Gemini generates an immersive opening scene with multiple choices.
 3. **Play Your Way**: Select a suggested choice OR type any custom action - the AI adapts.
 4. **Dynamic State**: Your health, inventory, and story evolve based on your decisions.
-5. **Infinite Replayability**: Every playthrough is unique - no two stories are the same.
+5. **Listen Along**: Click "Narrate" to hear the story read aloud via Google Cloud Text-to-Speech.
+6. **Infinite Replayability**: Every playthrough is unique - no two stories are the same.
 
 ## Approach and Logic
 
 ### Architecture
 ```
-Frontend (Vanilla HTML/CSS/JS)
+Browser (Vanilla HTML/CSS/JS)
     │
-    ▼ REST API
-Backend (Python FastAPI)
+    ▼ REST API + GZip
+FastAPI (async, middleware stack)
     │
-    ▼ Structured Prompts
-Google Gemini API (gemini-2.0-flash)
+    ├── Google Gemini API ──── Story generation (structured JSON)
+    ├── Cloud Firestore ────── Persistent game state
+    ├── Cloud Text-to-Speech ─ Narrative narration
+    └── Cloud Logging ──────── Structured JSON observability
     │
-    ▼ Deployed on
-Google Cloud Run
+    ▼ Deployed via
+Cloud Build → Cloud Run (serverless)
 ```
 
 ### AI Integration
-- Gemini receives a carefully crafted system prompt that makes it act as an expert storyteller
+- Gemini receives a carefully crafted system prompt acting as an expert storyteller
 - Game state (health, inventory, history) is passed as context for narrative coherence
-- Structured JSON output ensures reliable parsing of narrative, choices, and state changes
+- Structured JSON output (`response_mime_type="application/json"`) ensures reliable parsing
 - The AI dynamically adjusts difficulty and story complexity based on player actions
 
 ### Design Decisions
-- **Vanilla JS frontend**: No framework overhead, stays well under 10MB limit
-- **FastAPI backend**: Async-first, fast, with automatic OpenAPI documentation
-- **In-memory game state**: Appropriate for a hackathon demo; easily swappable for Firestore
-- **gemini-2.0-flash model**: Optimized for speed while maintaining narrative quality
+- **Vanilla JS frontend**: Zero framework overhead, well under 10MB limit
+- **FastAPI + async**: Non-blocking I/O for Gemini, Firestore, and TTS calls
+- **Dependency injection**: FastAPI `Depends()` for testable, swappable services
+- **Graceful degradation**: Firestore and TTS are optional; app works with just Gemini
+- **Structured Cloud Logging**: JSON-formatted stdout captured natively by Cloud Run
 
 ## Google Services Integration
 
 | Service | Usage |
 |---------|-------|
-| **Gemini API** | Core AI engine - generates stories, processes player actions, manages game logic |
-| **Cloud Run** | Serverless deployment with automatic scaling and HTTPS |
-| **Cloud Build** | Automated container builds from source |
-| **Artifact Registry** | Container image storage and management |
+| **Gemini API** (gemini-2.0-flash) | Core AI engine - generates stories, processes player actions, manages game logic |
+| **Cloud Firestore** | Persistent game state storage - games survive container restarts |
+| **Cloud Text-to-Speech** | Narrates adventure text aloud as MP3 audio for immersion and accessibility |
+| **Cloud Logging** | Structured JSON logs with severity, module, function, and trace correlation |
+| **Cloud Run** | Serverless deployment with automatic scaling, HTTPS, and health checks |
+| **Cloud Build** | CI/CD pipeline: build container, push to registry, deploy to Cloud Run |
+
+## Security
+
+- Non-root container user (`appuser`)
+- Security headers: CSP, X-Frame-Options, X-Content-Type-Options, Permissions-Policy
+- Rate limiting middleware (configurable per-minute threshold)
+- Input validation with Pydantic field constraints (max lengths, required fields)
+- No secrets in code - all credentials via environment variables
+- CORS restricted to configured origins
+- Swagger/ReDoc docs disabled in production
 
 ## Assumptions
 
 - Players have a modern web browser with JavaScript enabled
 - The Gemini API key is provided via environment variable (`GOOGLE_API_KEY`)
-- Game sessions are ephemeral (in-memory storage); persistent storage can be added with Firestore
+- Firestore and TTS are optional features enabled via environment variables
 - The application is designed for single-player experiences
 - Internet connectivity is required for AI-powered story generation
 
@@ -69,13 +85,8 @@ Google Cloud Run
 
 ### Setup
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Set your API key
 export GOOGLE_API_KEY=your-key-here
-
-# Run the application
 python -m app.main
 ```
 
@@ -88,44 +99,66 @@ pytest tests/ -v
 
 ## Deployment to Cloud Run
 
+### Via Cloud Build (recommended)
 ```bash
-# Build and deploy
+gcloud builds submit --config=cloudbuild.yaml
+```
+
+### Via gcloud CLI
+```bash
 gcloud run deploy questforge \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars GOOGLE_API_KEY=your-key-here
+  --set-env-vars GOOGLE_API_KEY=your-key,ENABLE_FIRESTORE=true,ENABLE_TTS=true
 ```
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GOOGLE_API_KEY` | Yes | - | Gemini API key |
+| `GCP_PROJECT_ID` | No | - | GCP project for Firestore |
+| `ENABLE_FIRESTORE` | No | `false` | Enable persistent game storage |
+| `ENABLE_TTS` | No | `false` | Enable text-to-speech narration |
+| `PORT` | No | `8080` | Server port (set by Cloud Run) |
+| `RATE_LIMIT_PER_MINUTE` | No | `60` | API rate limit per client IP |
 
 ## Project Structure
 
 ```
 ├── app/
-│   ├── main.py              # FastAPI application entry point
-│   ├── config.py             # Configuration management
+│   ├── main.py                # FastAPI app with middleware stack
+│   ├── config.py              # Environment-based configuration
+│   ├── dependencies.py        # Lazy-initialized service singletons
+│   ├── middleware.py           # Security headers, rate limiting, request logging
+│   ├── logging_config.py      # Structured JSON logging for Cloud Logging
 │   ├── models/
-│   │   └── schemas.py        # Pydantic data models
+│   │   └── schemas.py         # Pydantic request/response models
 │   ├── routes/
-│   │   ├── game.py           # Game API endpoints
-│   │   └── health.py         # Health check endpoint
+│   │   ├── game.py            # Game + TTS API endpoints
+│   │   └── health.py          # Health check with feature flags
 │   ├── services/
-│   │   ├── gemini_service.py # Gemini AI integration
-│   │   └── game_engine.py    # Game state management
+│   │   ├── gemini_service.py  # Gemini AI story generation
+│   │   ├── game_engine.py     # Game state + Firestore persistence
+│   │   ├── firestore_service.py # Cloud Firestore CRUD
+│   │   └── tts_service.py     # Cloud Text-to-Speech synthesis
 │   └── static/
-│       ├── index.html        # Game UI
-│       ├── css/style.css     # Styling
-│       └── js/app.js         # Frontend logic
-├── tests/                    # Test suite
-├── Dockerfile                # Container configuration
-├── requirements.txt          # Python dependencies
-└── README.md                 # This file
+│       ├── index.html         # Accessible game UI
+│       ├── css/style.css      # Dark theme with genre variants
+│       └── js/app.js          # Vanilla JS game controller
+├── tests/                     # Comprehensive test suite
+├── cloudbuild.yaml            # Cloud Build CI/CD pipeline
+├── Dockerfile                 # Multi-stage, non-root container
+├── requirements.txt           # Pinned Python dependencies
+└── README.md
 ```
 
 ## Evaluation Criteria Addressed
 
-- **Code Quality**: Modular architecture, type hints, clean separation of concerns
-- **Security**: Non-root container, input validation, no secrets in code
-- **Efficiency**: Async FastAPI, lightweight frontend, optimized container
-- **Testing**: Comprehensive test suite with mocked AI service
-- **Accessibility**: ARIA labels, keyboard navigation, screen reader support, reduced motion
-- **Google Services**: Deep Gemini integration, Cloud Run deployment
+- **Code Quality**: Modular architecture, dependency injection, type hints, docstrings, consistent patterns
+- **Security**: Non-root container, CSP/security headers, rate limiting, input validation, no exposed secrets
+- **Efficiency**: GZip compression, async I/O, lazy service init, multi-stage Docker, optimized static serving
+- **Testing**: Comprehensive test suite covering models, routes, engine, middleware, and edge cases
+- **Accessibility**: ARIA labels, keyboard navigation (number keys for choices), screen reader announcements, reduced motion, forced-colors support
+- **Google Services**: Gemini AI, Cloud Firestore, Cloud TTS, Cloud Logging, Cloud Run, Cloud Build

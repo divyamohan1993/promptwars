@@ -1,4 +1,7 @@
+"""Pydantic models for request/response validation and serialization."""
+
 from enum import Enum
+
 from pydantic import BaseModel, Field
 
 
@@ -16,8 +19,12 @@ class GameStartRequest(BaseModel):
 
 
 class ActionRequest(BaseModel):
-    game_id: str
+    game_id: str = Field(..., min_length=1)
     action: str = Field(..., min_length=1, max_length=500)
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
 
 
 class GameState(BaseModel):
@@ -43,3 +50,7 @@ class GameResponse(BaseModel):
     turn_count: int
     is_alive: bool
     is_complete: bool
+
+
+class TTSResponse(BaseModel):
+    audio: str

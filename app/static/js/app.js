@@ -70,6 +70,24 @@ const API = {
     }
     return response.json();
   },
+
+  /**
+   * Request text-to-speech narration audio.
+   * @param {string} text - The narrative text to convert to speech
+   * @returns {Promise<Object>} Object with base64-encoded audio
+   */
+  async narrateAudio(text) {
+    const response = await fetch('/api/game/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || 'Narration unavailable');
+    }
+    return response.json();
+  },
 };
 
 /* ============================================================
@@ -127,6 +145,7 @@ const Game = {
       choices:           document.getElementById('choices'),
       customActionInput: document.getElementById('custom-action'),
       btnCustomAction:   document.getElementById('btn-custom-action'),
+      btnNarrate:        document.getElementById('btn-narrate'),
       btnHistory:        document.getElementById('btn-history'),
       historyPanel:      document.getElementById('history-panel'),
       historyContent:    document.getElementById('history-content'),
@@ -186,6 +205,9 @@ const Game = {
     this.els.customActionInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.handleCustomAction();
     });
+
+    // Narrate current narrative
+    this.els.btnNarrate.addEventListener('click', () => this.handleNarrate());
 
     // History toggle
     this.els.btnHistory.addEventListener('click', () => this.toggleHistory());
@@ -453,7 +475,53 @@ const Game = {
   },
 
   /* ----------------------------------------------------------
-     2h. Typewriter Effect
+     2h. Narrate (Text-to-Speech)
+     ---------------------------------------------------------- */
+
+  async handleNarrate() {
+    // Get the most recent narrative text from history
+    if (this.history.length === 0) {
+      this.showGameError('No narrative to read aloud yet.');
+      return;
+    }
+
+    const lastEntry = this.history[this.history.length - 1];
+    const narrativeText = lastEntry.narrative;
+
+    if (!narrativeText) {
+      this.showGameError('No narrative text available to narrate.');
+      return;
+    }
+
+    // Disable button and show narrating state
+    this.els.btnNarrate.disabled = true;
+    this.els.btnNarrate.classList.add('btn-narrating');
+
+    try {
+      const data = await API.narrateAudio(narrativeText);
+      const audio = new Audio('data:audio/mp3;base64,' + data.audio);
+
+      audio.addEventListener('ended', () => {
+        this.els.btnNarrate.disabled = false;
+        this.els.btnNarrate.classList.remove('btn-narrating');
+      });
+
+      audio.addEventListener('error', () => {
+        this.els.btnNarrate.disabled = false;
+        this.els.btnNarrate.classList.remove('btn-narrating');
+        this.showGameError('Failed to play narration audio.');
+      });
+
+      audio.play();
+    } catch (error) {
+      this.els.btnNarrate.disabled = false;
+      this.els.btnNarrate.classList.remove('btn-narrating');
+      this.showGameError(error.message || 'Narration is currently unavailable. The TTS service may not be enabled.');
+    }
+  },
+
+  /* ----------------------------------------------------------
+     2i. Typewriter Effect
      ---------------------------------------------------------- */
 
   /**
