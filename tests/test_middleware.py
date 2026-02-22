@@ -23,6 +23,22 @@ class TestSecurityHeaders:
         resp = await raw_client.get("/api/health")
         assert "content-security-policy" in resp.headers
 
+    async def test_csp_includes_google_fonts(self, raw_client):
+        resp = await raw_client.get("/api/health")
+        csp = resp.headers.get("content-security-policy", "")
+        assert "fonts.googleapis.com" in csp
+        assert "fonts.gstatic.com" in csp
+
+    async def test_csp_includes_gcs(self, raw_client):
+        resp = await raw_client.get("/api/health")
+        csp = resp.headers.get("content-security-policy", "")
+        assert "storage.googleapis.com" in csp
+
+    async def test_csp_includes_blob(self, raw_client):
+        resp = await raw_client.get("/api/health")
+        csp = resp.headers.get("content-security-policy", "")
+        assert "blob:" in csp
+
     async def test_permissions_policy(self, raw_client):
         resp = await raw_client.get("/api/health")
         assert "permissions-policy" in resp.headers
@@ -39,20 +55,15 @@ class TestSecurityHeaders:
 class TestGzipCompression:
     async def test_gzip_for_large_responses(self, raw_client):
         resp = await raw_client.get("/", headers={"Accept-Encoding": "gzip"})
-        # HTML response should be compressed if large enough
         assert resp.status_code == 200
 
 
 class TestRateLimiting:
     async def test_rate_limiter_is_active(self, raw_client):
-        """Verify the rate limiter middleware is active by making a single request
-        and confirming it succeeds (not blocked). We avoid hammering the limit
-        to prevent flaky tests."""
         resp = await raw_client.post(
             "/api/game/start",
-            json={"player_name": "RateTest", "genre": "fantasy"},
+            json={"player_name": "RateTest", "adventure": "hawkins-investigation"},
         )
-        # Should get through (not 429) since we're well under the limit
         assert resp.status_code != 429
 
 
@@ -68,4 +79,12 @@ class TestStaticFiles:
 
     async def test_serves_js(self, raw_client):
         resp = await raw_client.get("/js/app.js")
+        assert resp.status_code == 200
+
+    async def test_serves_animations_css(self, raw_client):
+        resp = await raw_client.get("/css/animations.css")
+        assert resp.status_code == 200
+
+    async def test_serves_map_css(self, raw_client):
+        resp = await raw_client.get("/css/map.css")
         assert resp.status_code == 200

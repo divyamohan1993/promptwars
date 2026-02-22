@@ -1,868 +1,936 @@
 /**
- * QuestForge — AI-Powered Text Adventure
+ * QuestForge: The Upside Down
  * Frontend Application (Vanilla JS)
  *
- * Handles:
- *  - API communication with the backend
- *  - Screen management (start, game, gameover)
- *  - Narrative rendering with typewriter effect
- *  - Health, inventory, and turn tracking
- *  - Genre-themed styling
- *  - Accessibility: focus management, aria-live announcements
+ * Modules:
+ *  1. API       — Server communication (fetch wrapper)
+ *  2. Sound     — Web Audio API synthesised SFX
+ *  3. MapRender — Canvas 2D procedural map
+ *  4. Scene     — Visual scene-card rendering + icon lookup
+ *  5. A11y      — Accessibility helpers (screen-reader announcements)
+ *  6. Game      — Main controller (state, UI, Google service integration)
+ *
+ * Google Cloud services used from the frontend:
+ *  - Gemini AI       (via /api/game/start, /api/game/action)
+ *  - Cloud TTS       (via /api/game/tts)
+ *  - Cloud Translate  (via /api/game/translate)
+ *  - Vertex AI Imagen (via /api/game/image)
  */
+
+"use strict";
 
 /* ============================================================
    1. API Client
    ============================================================ */
-
 const API = {
-  /**
-   * Start a new game session.
-   * @param {string} playerName
-   * @param {string} genre
-   * @returns {Promise<Object>} Game state from server
-   */
-  async startGame(playerName, genre) {
-    const response = await fetch('/api/game/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ player_name: playerName, genre: genre }),
+  async startGame(playerName, adventure, language) {
+    const res = await fetch("/api/game/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ player_name: playerName, adventure, language }),
     });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || err.error || `Server error (${response.status})`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
     }
-    return response.json();
+    return res.json();
   },
 
-  /**
-   * Send a player action (choice or free input).
-   * @param {string} gameId
-   * @param {string} action
-   * @returns {Promise<Object>} Updated game state
-   */
   async sendAction(gameId, action) {
-    const response = await fetch('/api/game/action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ game_id: gameId, action: action }),
+    const res = await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game_id: gameId, action }),
     });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || err.error || `Server error (${response.status})`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
     }
-    return response.json();
+    return res.json();
   },
 
-  /**
-   * Retrieve current game state.
-   * @param {string} gameId
-   * @returns {Promise<Object>} Current game state
-   */
   async getGameState(gameId) {
-    const response = await fetch(`/api/game/${encodeURIComponent(gameId)}`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || err.error || `Server error (${response.status})`);
-    }
-    return response.json();
+    const res = await fetch(`/api/game/${gameId}`);
+    if (!res.ok) throw new Error(`Server error (${res.status})`);
+    return res.json();
   },
 
-  /**
-   * Request text-to-speech narration audio.
-   * @param {string} text - The narrative text to convert to speech
-   * @returns {Promise<Object>} Object with base64-encoded audio
-   */
   async narrateAudio(text) {
-    const response = await fetch('/api/game/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text }),
+    const res = await fetch("/api/game/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
     });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || 'Narration unavailable');
-    }
-    return response.json();
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.audio;
+  },
+
+  async translateText(text, targetLanguage) {
+    const res = await fetch("/api/game/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, target_language: targetLanguage }),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  },
+
+  async generateImage(prompt) {
+    const res = await fetch("/api/game/image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!res.ok) return null;
+    return res.json();
   },
 };
 
 /* ============================================================
-   2. Game Controller
+   2. Sound Manager (Web Audio API)
    ============================================================ */
+const Sound = {
+  ctx: null,
+  enabled: true,
+  _initialized: false,
 
+  init() {
+    const handler = () => {
+      if (!this._initialized) {
+        try {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          this._initialized = true;
+        } catch (_) { /* no audio support */ }
+      }
+    };
+    document.addEventListener("click", handler, { once: true });
+    document.addEventListener("keydown", handler, { once: true });
+  },
+
+  _tone(freq, dur, type, vol) {
+    if (!this.ctx || !this.enabled) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol || 0.12, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start();
+    osc.stop(this.ctx.currentTime + dur);
+  },
+
+  click()   { this._tone(800, 0.05, "square", 0.08); },
+  item()    { this._tone(523, 0.1); setTimeout(() => this._tone(659, 0.1), 100); setTimeout(() => this._tone(784, 0.15), 200); },
+  damage()  { this._tone(200, 0.15, "sawtooth", 0.1); },
+  heal()    { this._tone(440, 0.1); setTimeout(() => this._tone(660, 0.15), 150); },
+  achieve() { this._tone(659, 0.08); setTimeout(() => this._tone(784, 0.08), 80); setTimeout(() => this._tone(1047, 0.2), 160); },
+  victory() { [523,659,784,1047].forEach((f,i) => setTimeout(() => this._tone(f, 0.2), i*120)); },
+  defeat()  { [400,350,300,200].forEach((f,i) => setTimeout(() => this._tone(f, 0.2, "sawtooth", 0.08), i*150)); },
+};
+
+/* ============================================================
+   3. Map Renderer (Canvas 2D)
+   ============================================================ */
+const MapRender = {
+  canvas: null,
+  ctx: null,
+
+  init(canvasEl) {
+    this.canvas = canvasEl;
+    this.ctx = canvasEl.getContext("2d");
+  },
+
+  render(nodes, currentId) {
+    if (!this.ctx) return;
+    const c = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    c.clearRect(0, 0, w, h);
+    c.fillStyle = "#0a0a0f";
+    c.fillRect(0, 0, w, h);
+
+    if (!nodes || nodes.length === 0) {
+      c.fillStyle = "#333346";
+      c.font = "11px system-ui";
+      c.textAlign = "center";
+      c.fillText("Explore to reveal the map!", w / 2, h / 2);
+      return;
+    }
+
+    const padX = 35, padY = 30;
+    const stepX = Math.min(55, (w - padX * 2) / Math.max(4, Math.max(...nodes.map(n => n.x)) + 1));
+    const stepY = Math.min(45, (h - padY * 2) / Math.max(3, Math.max(...nodes.map(n => n.y)) + 1));
+
+    const pos = (n) => ({ x: padX + n.x * stepX, y: padY + n.y * stepY });
+
+    // Connections
+    c.strokeStyle = "#333346";
+    c.lineWidth = 2;
+    nodes.forEach(node => {
+      const from = pos(node);
+      node.connected_to.forEach(tid => {
+        const target = nodes.find(n => n.node_id === tid);
+        if (target) {
+          const to = pos(target);
+          c.beginPath();
+          c.moveTo(from.x, from.y);
+          c.lineTo(to.x, to.y);
+          c.stroke();
+        }
+      });
+    });
+
+    // Nodes
+    nodes.forEach(node => {
+      const p = pos(node);
+      const isCurrent = node.node_id === currentId;
+      const r = isCurrent ? 10 : 7;
+
+      // Glow for current
+      if (isCurrent) {
+        c.save();
+        c.shadowColor = "#cc2200";
+        c.shadowBlur = 15;
+        c.beginPath();
+        c.arc(p.x, p.y, r + 3, 0, Math.PI * 2);
+        c.fillStyle = "rgba(204,34,0,0.3)";
+        c.fill();
+        c.restore();
+      }
+
+      c.beginPath();
+      c.arc(p.x, p.y, r, 0, Math.PI * 2);
+      c.fillStyle = isCurrent ? "#cc2200" : (node.visited ? "#00d4ff" : "#333346");
+      c.fill();
+      c.strokeStyle = isCurrent ? "#ff4422" : "#555";
+      c.lineWidth = 1;
+      c.stroke();
+
+      // Icon
+      const icons = { forest: "\u{1F332}", lab: "\u{1F52C}", school: "\u{1F3EB}", house: "\u{1F3E0}", cave: "\u{1F573}", town: "\u{1F3D8}", library: "\u{1F4DA}", arcade: "\u{1F579}", field: "\u{1F33E}", portal: "\u{1F300}", "bike-trail": "\u{1F6B2}", basement: "\u{1F3E0}" };
+      const icon = icons[node.icon] || "\u{1F4CD}";
+      c.font = "10px system-ui";
+      c.textAlign = "center";
+      c.fillText(icon, p.x, p.y - r - 4);
+
+      // Label
+      c.fillStyle = "#e8e0d0";
+      c.font = "9px system-ui";
+      c.fillText(node.name.length > 12 ? node.name.slice(0, 11) + "\u2026" : node.name, p.x, p.y + r + 12);
+    });
+  },
+};
+
+/* ============================================================
+   4. Scene Renderer
+   ============================================================ */
+const Scene = {
+  MOOD_ICONS: {
+    mysterious: "\u{1F52E}", cheerful: "\u{2600}\u{FE0F}", tense: "\u26A1",
+    scary: "\u{1F47B}", victorious: "\u{1F3C6}", calm: "\u{1F343}",
+    exciting: "\u{1F525}", neutral: "\u{2728}",
+  },
+  LOCATION_ICONS: {
+    forest: "\u{1F332}", lab: "\u{1F52C}", school: "\u{1F3EB}", house: "\u{1F3E0}",
+    cave: "\u{1F573}\u{FE0F}", town: "\u{1F3D8}\u{FE0F}", library: "\u{1F4DA}", arcade: "\u{1F579}\u{FE0F}",
+    field: "\u{1F33E}", portal: "\u{1F300}", "bike-trail": "\u{1F6B2}", basement: "\u{1F3E0}",
+  },
+  CHOICE_ICONS: {
+    sword: "\u2694\u{FE0F}", shield: "\u{1F6E1}\u{FE0F}", "magnifying-glass": "\u{1F50D}",
+    flashlight: "\u{1F526}", run: "\u{1F3C3}", talk: "\u{1F4AC}", key: "\u{1F511}",
+    bike: "\u{1F6B2}", "walkie-talkie": "\u{1F4FB}", book: "\u{1F4D6}",
+    potion: "\u{1F9EA}", friend: "\u{1F91D}", sneak: "\u{1F43E}", climb: "\u{1FA78}",
+    door: "\u{1F6AA}", puzzle: "\u{1F9E9}", magic: "\u{1FA84}", hide: "\u{1F648}",
+  },
+  ITEM_ICONS: {
+    flashlight: "\u{1F526}", "walkie-talkie": "\u{1F4FB}", bike: "\u{1F6B2}",
+    key: "\u{1F511}", sword: "\u2694\u{FE0F}", shield: "\u{1F6E1}\u{FE0F}",
+    map: "\u{1F5FA}\u{FE0F}", potion: "\u{1F9EA}", book: "\u{1F4D6}",
+    torch: "\u{1F525}", compass: "\u{1F9ED}", rope: "\u{1FAA2}",
+    gem: "\u{1F48E}", coin: "\u{1FA99}", ring: "\u{1F48D}",
+    wand: "\u{1FA84}", helmet: "\u26D1\u{FE0F}", scroll: "\u{1F4DC}",
+  },
+  ACHIEVEMENT_ICONS: {
+    "First Steps": "\u{1F463}", Explorer: "\u{1F5FA}\u{FE0F}", Collector: "\u{1F392}",
+    Survivor: "\u{1F3C5}", "Brave Heart": "\u{1F9E1}", "Full Health": "\u{1F49A}",
+  },
+
+  renderSceneCard(visual, els) {
+    if (!visual) return;
+    // Background mood
+    const bg = els.sceneBg;
+    bg.className = "scene-bg";
+    if (visual.mood) bg.classList.add("mood-" + visual.mood);
+
+    // Location label
+    const locIcon = this.LOCATION_ICONS[visual.location_icon] || "\u{1F4CD}";
+    els.sceneLocation.textContent = locIcon + " " + (visual.location_name || "Unknown");
+
+    // Mood icon
+    els.sceneMoodIcon.textContent = this.MOOD_ICONS[visual.mood] || "\u{2728}";
+  },
+
+  getChoiceIcon(iconKey) {
+    return this.CHOICE_ICONS[iconKey] || "\u{27A1}\u{FE0F}";
+  },
+
+  getItemIcon(itemName) {
+    const lower = itemName.toLowerCase();
+    for (const [key, icon] of Object.entries(this.ITEM_ICONS)) {
+      if (lower.includes(key)) return icon;
+    }
+    return "\u{1F4E6}";
+  },
+
+  getAchievementIcon(name) {
+    return this.ACHIEVEMENT_ICONS[name] || "\u{2B50}";
+  },
+};
+
+/* ============================================================
+   5. Accessibility
+   ============================================================ */
+const A11y = {
+  el: null,
+  init() { this.el = document.getElementById("sr-announcer"); },
+  announce(msg) {
+    if (!this.el) return;
+    this.el.textContent = "";
+    requestAnimationFrame(() => { this.el.textContent = msg; });
+  },
+};
+
+/* ============================================================
+   6. Game Controller
+   ============================================================ */
 const Game = {
   // State
   gameId: null,
-  genre: null,
+  adventure: null,
   playerName: null,
+  language: "en",
   health: 100,
   maxHealth: 100,
   inventory: [],
   turn: 0,
-  history: [],          // Array of { turn, narrative, action }
+  xp: 0,
+  achievements: [],
+  mapNodes: [],
+  currentNodeId: "",
+  history: [],
   isLoading: false,
-  typewriterTimer: null, // For cancelling typewriter
+  typewriterTimer: null,
   typewriterResolve: null,
-  typewriterSpeed: 20,   // ms per character
+  typewriterSpeed: 18,
 
-  /* ----------------------------------------------------------
-     2a. Initialization
-     ---------------------------------------------------------- */
+  // DOM cache
+  els: {},
 
   init() {
     this.cacheDOM();
     this.bindEvents();
-    this.showScreen('start');
+    Sound.init();
+    A11y.init();
+    MapRender.init(this.els.gameMap);
+    this.els.playerName.focus();
   },
 
   cacheDOM() {
-    // Screens
-    this.screens = {
-      start:    document.getElementById('start-screen'),
-      game:     document.getElementById('game-screen'),
-      gameover: document.getElementById('gameover-screen'),
-    };
-
-    // Start screen elements
+    const q = (s) => document.querySelector(s);
     this.els = {
-      playerNameInput:  document.getElementById('player-name'),
-      genreCards:        document.querySelectorAll('.genre-card'),
-      genreRadios:       document.querySelectorAll('.genre-radio'),
-      btnStart:          document.getElementById('btn-start'),
-      startError:        document.getElementById('start-error'),
-
-      // Game screen
-      healthBar:         document.getElementById('health-bar'),
-      healthBarWrapper:  document.querySelector('.health-bar-wrapper'),
-      healthText:        document.getElementById('health-text'),
-      inventory:         document.getElementById('inventory'),
-      turnCounter:       document.getElementById('turn-counter'),
-      narrative:         document.getElementById('narrative'),
-      choices:           document.getElementById('choices'),
-      customActionInput: document.getElementById('custom-action'),
-      btnCustomAction:   document.getElementById('btn-custom-action'),
-      btnNarrate:        document.getElementById('btn-narrate'),
-      btnHistory:        document.getElementById('btn-history'),
-      historyPanel:      document.getElementById('history-panel'),
-      historyContent:    document.getElementById('history-content'),
-      loadingIndicator:  document.getElementById('loading-indicator'),
-      gameError:         document.getElementById('game-error'),
-
-      // Game over screen
-      gameoverCard:     document.querySelector('.gameover-card'),
-      gameoverIcon:     document.getElementById('gameover-icon'),
-      gameoverHeading:  document.getElementById('gameover-heading'),
-      gameoverMessage:  document.getElementById('gameover-message'),
-      summaryTurns:     document.getElementById('summary-turns'),
-      summaryHealth:    document.getElementById('summary-health'),
-      summaryItems:     document.getElementById('summary-items'),
-      summaryGenre:     document.getElementById('summary-genre'),
-      btnPlayAgain:     document.getElementById('btn-play-again'),
-
-      // Accessibility
-      srAnnouncer:      document.getElementById('sr-announcer'),
+      // Screens
+      startScreen: q("#start-screen"),
+      gameScreen: q("#game-screen"),
+      gameoverScreen: q("#gameover-screen"),
+      // Start
+      playerName: q("#player-name"),
+      startError: q("#start-error"),
+      btnStart: q("#btn-start"),
+      // Game
+      heartsDisplay: q("#hearts-display"),
+      healthText: q("#health-text"),
+      xpValue: q("#xp-value"),
+      turnCounter: q("#turn-counter"),
+      narrative: q("#narrative"),
+      btnNarrate: q("#btn-narrate"),
+      btnHistory: q("#btn-history"),
+      historyPanel: q("#history-panel"),
+      historyContent: q("#history-content"),
+      choices: q("#choices"),
+      customAction: q("#custom-action"),
+      btnCustomAction: q("#btn-custom-action"),
+      loadingIndicator: q("#loading-indicator"),
+      gameError: q("#game-error"),
+      // Scene
+      sceneCard: q("#scene-card"),
+      sceneBg: q("#scene-bg"),
+      sceneLocation: q("#scene-location"),
+      sceneMoodIcon: q("#scene-mood-icon"),
+      sceneImage: q("#scene-image"),
+      // Side panels
+      gameMap: q("#game-map"),
+      inventoryGrid: q("#inventory-grid"),
+      achievementsGrid: q("#achievements-grid"),
+      // Overlays
+      encounterOverlay: q("#encounter-overlay"),
+      encounterIcon: q("#encounter-icon"),
+      encounterName: q("#encounter-name"),
+      encounterType: q("#encounter-type"),
+      itemFoundOverlay: q("#item-found-overlay"),
+      itemFoundName: q("#item-found-name"),
+      achievementPopup: q("#achievement-popup"),
+      achievementText: q("#achievement-text"),
+      // Game over
+      gameoverIcon: q("#gameover-icon"),
+      gameoverHeading: q("#gameover-heading"),
+      gameoverMessage: q("#gameover-message"),
+      gameoverAchievements: q("#gameover-achievements"),
+      summaryTurns: q("#summary-turns"),
+      summaryHealth: q("#summary-health"),
+      summaryItems: q("#summary-items"),
+      summaryXp: q("#summary-xp"),
+      btnPlayAgain: q("#btn-play-again"),
+      // Header
+      languageSelect: q("#language-select"),
+      btnSoundToggle: q("#btn-sound-toggle"),
+      particleOverlay: q("#particle-overlay"),
     };
   },
-
-  /* ----------------------------------------------------------
-     2b. Event Binding
-     ---------------------------------------------------------- */
 
   bindEvents() {
-    // Genre card selection — add .selected class for CSS fallback
-    this.els.genreCards.forEach((card) => {
-      card.addEventListener('click', () => {
-        this.els.genreCards.forEach((c) => c.classList.remove('selected'));
-        card.classList.add('selected');
-        const radio = card.querySelector('.genre-radio');
-        if (radio) radio.checked = true;
-      });
+    this.els.btnStart.addEventListener("click", () => this.handleStart());
+    this.els.playerName.addEventListener("keydown", (e) => { if (e.key === "Enter") this.handleStart(); });
+    this.els.btnCustomAction.addEventListener("click", () => this.handleCustomAction());
+    this.els.customAction.addEventListener("keydown", (e) => { if (e.key === "Enter") this.handleCustomAction(); });
+    this.els.btnNarrate.addEventListener("click", () => this.handleNarrate());
+    this.els.btnHistory.addEventListener("click", () => this.toggleHistory());
+    this.els.btnPlayAgain.addEventListener("click", () => this.handlePlayAgain());
+    this.els.narrative.addEventListener("click", () => this.skipTypewriter());
+    this.els.btnSoundToggle.addEventListener("click", () => this.toggleSound());
+    this.els.languageSelect.addEventListener("change", (e) => { this.language = e.target.value; });
+
+    // Keyboard shortcuts for choices
+    document.addEventListener("keydown", (e) => {
+      if (this.isLoading) return;
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= 9) {
+        const btns = this.els.choices.querySelectorAll(".choice-btn");
+        if (btns[num - 1]) {
+          btns[num - 1].click();
+        }
+      }
     });
-
-    // Also handle radio change (keyboard navigation)
-    this.els.genreRadios.forEach((radio) => {
-      radio.addEventListener('change', () => {
-        this.els.genreCards.forEach((c) => c.classList.remove('selected'));
-        const parentCard = radio.closest('.genre-card');
-        if (parentCard) parentCard.classList.add('selected');
-      });
-    });
-
-    // Start game
-    this.els.btnStart.addEventListener('click', () => this.handleStartGame());
-
-    // Allow Enter key on name input to start game
-    this.els.playerNameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this.handleStartGame();
-    });
-
-    // Custom action
-    this.els.btnCustomAction.addEventListener('click', () => this.handleCustomAction());
-    this.els.customActionInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this.handleCustomAction();
-    });
-
-    // Narrate current narrative
-    this.els.btnNarrate.addEventListener('click', () => this.handleNarrate());
-
-    // History toggle
-    this.els.btnHistory.addEventListener('click', () => this.toggleHistory());
-
-    // Play again
-    this.els.btnPlayAgain.addEventListener('click', () => this.handlePlayAgain());
-
-    // Click on narrative to skip typewriter
-    this.els.narrative.addEventListener('click', () => this.skipTypewriter());
   },
 
-  /* ----------------------------------------------------------
-     2c. Screen Management
-     ---------------------------------------------------------- */
-
+  /* --- Screen Management --- */
   showScreen(name) {
-    Object.entries(this.screens).forEach(([key, el]) => {
-      if (key === name) {
-        el.hidden = false;
-        el.classList.add('screen--active');
-      } else {
-        el.hidden = true;
-        el.classList.remove('screen--active');
-      }
+    [this.els.startScreen, this.els.gameScreen, this.els.gameoverScreen].forEach(s => {
+      s.hidden = true;
+      s.classList.remove("screen--active");
     });
-
-    // Focus management for accessibility
-    requestAnimationFrame(() => {
-      switch (name) {
-        case 'start':
-          this.els.playerNameInput.focus();
-          break;
-        case 'game':
-          this.els.narrative.focus();
-          break;
-        case 'gameover':
-          this.els.gameoverHeading.setAttribute('tabindex', '-1');
-          this.els.gameoverHeading.focus();
-          break;
-      }
-    });
+    const screen = {
+      start: this.els.startScreen,
+      game: this.els.gameScreen,
+      gameover: this.els.gameoverScreen,
+    }[name];
+    if (screen) {
+      screen.hidden = false;
+      screen.classList.add("screen--active");
+      // Move focus into the new screen for keyboard / screen-reader users.
+      const heading = screen.querySelector("h2");
+      if (heading) heading.focus({ preventScroll: false });
+    }
   },
 
-  /* ----------------------------------------------------------
-     2d. Start Game Handler
-     ---------------------------------------------------------- */
+  /* --- Start Game --- */
+  async handleStart() {
+    const name = this.els.playerName.value.trim();
+    const adventureRadio = document.querySelector('input[name="adventure"]:checked');
 
-  async handleStartGame() {
-    // Validate
-    const name = this.els.playerNameInput.value.trim();
-    const selectedRadio = document.querySelector('.genre-radio:checked');
-
+    this.els.startError.hidden = true;
     if (!name) {
-      this.showStartError('Please enter your adventurer name.');
-      this.els.playerNameInput.focus();
+      this.showError(this.els.startError, "Please enter your hero name!");
+      this.els.playerName.focus();
+      return;
+    }
+    if (!adventureRadio) {
+      this.showError(this.els.startError, "Please pick an adventure!");
       return;
     }
 
-    if (!selectedRadio) {
-      this.showStartError('Please choose a genre for your adventure.');
-      return;
-    }
-
-    const genre = selectedRadio.value;
-    this.hideStartError();
-
-    // Disable start button
-    this.els.btnStart.disabled = true;
-    this.els.btnStart.querySelector('.btn-text').textContent = 'Summoning your quest...';
-
-    try {
-      const data = await API.startGame(name, genre);
-
-      // Set state
-      this.gameId = data.game_id;
-      this.genre = genre;
-      this.playerName = name;
-      this.health = data.health != null ? data.health : 100;
-      this.maxHealth = 100;
-      this.inventory = data.inventory || [];
-      this.turn = data.turn_count || 1;
-      this.history = [];
-
-      // Apply theme
-      this.applyGenreTheme(genre);
-
-      // Switch to game screen
-      this.showScreen('game');
-
-      // Render initial state
-      this.updateHealth(this.health);
-      this.updateInventory(this.inventory);
-      this.updateTurn(this.turn);
-
-      // Clear narrative and render first narrative
-      this.els.narrative.innerHTML = '';
-      if (data.narrative) {
-        this.history.push({
-          turn: this.turn,
-          narrative: data.narrative,
-          action: null,
-        });
-        await this.typewriteNarrative(data.narrative);
-      }
-
-      // Render choices
-      if (data.choices && data.choices.length > 0) {
-        this.renderChoices(data.choices);
-      }
-
-      this.announce(`Your ${genre} adventure has begun. ${data.narrative || ''}`);
-
-    } catch (error) {
-      this.showStartError(error.message || 'Failed to start the game. Please try again.');
-    } finally {
-      this.els.btnStart.disabled = false;
-      this.els.btnStart.querySelector('.btn-text').textContent = 'Begin Quest';
-    }
-  },
-
-  /* ----------------------------------------------------------
-     2e. Action Handlers
-     ---------------------------------------------------------- */
-
-  async handleChoiceAction(choiceText) {
-    if (this.isLoading) return;
-    await this.sendPlayerAction(choiceText);
-  },
-
-  async handleCustomAction() {
-    if (this.isLoading) return;
-    const action = this.els.customActionInput.value.trim();
-    if (!action) {
-      this.els.customActionInput.focus();
-      return;
-    }
-    this.els.customActionInput.value = '';
-    await this.sendPlayerAction(action);
-  },
-
-  async sendPlayerAction(action) {
+    const adventure = adventureRadio.value;
+    this.playerName = name;
+    this.adventure = adventure;
     this.setLoading(true);
-    this.hideGameError();
 
     try {
-      const data = await API.sendAction(this.gameId, action);
+      const data = await API.startGame(name, adventure, this.language);
+      this.gameId = data.game_id;
+      this.health = data.health;
+      this.inventory = data.inventory || [];
+      this.turn = data.turn_count;
+      this.xp = data.xp || 0;
+      this.achievements = data.achievements || [];
+      this.mapNodes = data.map_nodes || [];
+      this.currentNodeId = data.current_node_id || "";
+      this.history = [{ turn: 1, narrative: data.narrative, action: null }];
 
-      // Update state
-      this.health = data.health != null ? data.health : this.health;
-      this.inventory = data.inventory || this.inventory;
-      this.turn = data.turn_count || this.turn + 1;
+      this.applyTheme(adventure);
+      this.showScreen("game");
+      this.updateHearts(data.health);
+      this.updateXP(data.xp || 0);
+      this.updateTurn(data.turn_count);
+      this.updateInventory(data.inventory || []);
+      this.updateAchievements(data.achievements || []);
+      MapRender.render(this.mapNodes, this.currentNodeId);
 
-      this.updateHealth(this.health);
-      this.updateInventory(this.inventory);
-      this.updateTurn(this.turn);
-
-      // Add separator and new narrative
-      if (data.narrative) {
-        this.history.push({
-          turn: this.turn,
-          narrative: data.narrative,
-          action: action,
-        });
-        this.addNarrativeSeparator();
-        await this.typewriteNarrative(data.narrative);
+      if (data.scene_visual) {
+        Scene.renderSceneCard(data.scene_visual, this.els);
       }
 
-      // Check for game over
-      if (!data.is_alive || data.is_complete) {
-        this.handleGameOver(data);
-        return;
-      }
-
-      // Render new choices
-      if (data.choices && data.choices.length > 0) {
-        this.renderChoices(data.choices);
-      } else {
-        this.els.choices.innerHTML = '';
-      }
-
-      this.announce(`Turn ${this.turn}. ${data.narrative || ''}`);
-
-    } catch (error) {
-      this.showGameError(error.message || 'Something went wrong. Please try again.');
+      await this.typewrite(data.narrative);
+      this.renderChoices(data.choices, data.choice_icons || []);
+      A11y.announce("Your adventure has begun! " + data.narrative.slice(0, 100));
+      Sound.click();
+    } catch (err) {
+      this.showError(this.els.startError, err.message);
     } finally {
       this.setLoading(false);
     }
   },
 
-  /* ----------------------------------------------------------
-     2f. Game Over
-     ---------------------------------------------------------- */
-
-  handleGameOver(data) {
-    const isVictory = data.is_alive && data.is_complete;
-
-    // Update gameover card
-    this.els.gameoverCard.className = 'gameover-card ' +
-      (isVictory ? 'gameover--victory' : 'gameover--death');
-
-    this.els.gameoverIcon.textContent = isVictory ? '\u{1F3C6}' : '\u{1F480}';
-
-    this.els.gameoverHeading.textContent = isVictory
-      ? 'Victory! Quest Complete!'
-      : 'You Have Fallen...';
-
-    this.els.gameoverMessage.textContent = data.narrative ||
-      (isVictory
-        ? 'Congratulations! You have completed your quest with honor.'
-        : 'Your adventure has come to a tragic end.');
-
-    // Stats summary
-    this.els.summaryTurns.textContent = this.turn;
-    this.els.summaryHealth.textContent = Math.max(0, this.health);
-    this.els.summaryItems.textContent = this.inventory.length;
-    this.els.summaryGenre.textContent = this.formatGenreName(this.genre);
-
-    this.showScreen('gameover');
-    this.announce(
-      isVictory
-        ? 'Victory! You completed the quest.'
-        : 'Game over. You have fallen.'
-    );
+  /* --- Actions --- */
+  handleChoiceAction(text) {
+    if (this.isLoading) return;
+    Sound.click();
+    this.sendAction(text);
   },
 
-  /* ----------------------------------------------------------
-     2g. Play Again
-     ---------------------------------------------------------- */
+  handleCustomAction() {
+    const action = this.els.customAction.value.trim();
+    if (!action || this.isLoading) return;
+    Sound.click();
+    this.els.customAction.value = "";
+    this.sendAction(action);
+  },
+
+  async sendAction(action) {
+    this.setLoading(true);
+    this.els.choices.innerHTML = "";
+    const prevAchievements = [...this.achievements];
+
+    try {
+      const data = await API.sendAction(this.gameId, action);
+      const prevHealth = this.health;
+
+      this.health = data.health;
+      this.inventory = data.inventory || [];
+      this.turn = data.turn_count;
+      this.xp = data.xp || 0;
+      this.achievements = data.achievements || [];
+      this.mapNodes = data.map_nodes || [];
+      this.currentNodeId = data.current_node_id || "";
+      this.history.push({ turn: data.turn_count, narrative: data.narrative, action });
+
+      this.updateHearts(data.health);
+      this.updateXP(data.xp || 0);
+      this.updateTurn(data.turn_count);
+      this.updateInventory(data.inventory || []);
+      this.updateAchievements(data.achievements || []);
+      MapRender.render(this.mapNodes, this.currentNodeId);
+
+      if (data.scene_visual) {
+        Scene.renderSceneCard(data.scene_visual, this.els);
+        // Show encounter overlay for NPCs
+        if (data.scene_visual.npc_name) {
+          this.showEncounter(data.scene_visual);
+        }
+      }
+
+      // Health effects
+      if (data.health < prevHealth) {
+        Sound.damage();
+        this.shakeScreen();
+      } else if (data.health > prevHealth) {
+        Sound.heal();
+      }
+
+      // New items — show the item-found overlay for any item_found in scene_visual.
+      if (data.scene_visual && data.scene_visual.item_found) {
+        this.showItemFound(data.scene_visual.item_found);
+      }
+
+      // New achievements
+      const newAchievements = (data.achievements || []).filter(a => !prevAchievements.includes(a));
+      newAchievements.forEach((a, i) => {
+        setTimeout(() => this.showAchievementPopup(a), i * 1500);
+      });
+
+      // Narrative
+      await this.typewrite(data.narrative);
+
+      // Game over check
+      if (!data.is_alive || data.is_complete) {
+        this.handleGameOver(data);
+        return;
+      }
+
+      this.renderChoices(data.choices, data.choice_icons || []);
+      A11y.announce(`Turn ${data.turn_count}. ${data.narrative.slice(0, 100)}`);
+    } catch (err) {
+      this.showError(this.els.gameError, err.message);
+    } finally {
+      this.setLoading(false);
+    }
+  },
+
+  /* --- Game Over --- */
+  handleGameOver(data) {
+    const isVictory = data.is_alive && data.is_complete;
+    if (isVictory) {
+      Sound.victory();
+      this.els.gameoverIcon.textContent = "\u{1F3C6}";
+      this.els.gameoverHeading.textContent = "Victory!";
+      this.els.gameoverMessage.textContent = "You completed the adventure! You're a true hero!";
+    } else {
+      Sound.defeat();
+      this.els.gameoverIcon.textContent = "\u{1F47B}";
+      this.els.gameoverHeading.textContent = "Game Over";
+      this.els.gameoverMessage.textContent = "The adventure ends here... but heroes never give up!";
+    }
+
+    this.els.summaryTurns.textContent = this.turn;
+    this.els.summaryHealth.textContent = this.health;
+    this.els.summaryItems.textContent = this.inventory.length;
+    this.els.summaryXp.textContent = this.xp;
+
+    // Show earned achievements
+    this.els.gameoverAchievements.innerHTML = "";
+    this.achievements.forEach(a => {
+      const badge = document.createElement("span");
+      badge.className = "achievement-badge";
+      badge.innerHTML = `<span class="achievement-badge-icon">${Scene.getAchievementIcon(a)}</span> ${a}`;
+      this.els.gameoverAchievements.appendChild(badge);
+    });
+
+    setTimeout(() => this.showScreen("gameover"), 1500);
+    A11y.announce(isVictory ? "Victory! You completed the adventure!" : "Game over. Try again!");
+  },
 
   handlePlayAgain() {
-    // Reset state
+    Sound.click();
     this.gameId = null;
-    this.genre = null;
-    this.playerName = null;
     this.health = 100;
     this.inventory = [];
     this.turn = 0;
+    this.xp = 0;
+    this.achievements = [];
+    this.mapNodes = [];
+    this.currentNodeId = "";
     this.history = [];
     this.cancelTypewriter();
 
-    // Remove theme
-    document.body.className = '';
-
-    // Clear UI
+    // Reset UI
+    document.body.className = "";
     this.els.narrative.innerHTML = '<p class="narrative-placeholder">Your adventure awaits...</p>';
-    this.els.choices.innerHTML = '';
-    this.els.customActionInput.value = '';
+    this.els.choices.innerHTML = "";
+    this.els.inventoryGrid.innerHTML = '<span class="inventory-empty" role="listitem">Empty backpack</span>';
+    this.els.achievementsGrid.innerHTML = '<span class="achievements-empty" role="listitem">No badges yet</span>';
+    this.els.sceneImage.hidden = true;
     this.els.historyPanel.hidden = true;
-    this.els.btnHistory.setAttribute('aria-expanded', 'false');
-    this.els.historyContent.innerHTML = '';
-    this.hideGameError();
+    this.els.btnHistory.setAttribute("aria-expanded", "false");
 
-    // Reset genre selection
-    this.els.genreCards.forEach((c) => c.classList.remove('selected'));
-    this.els.genreRadios.forEach((r) => { r.checked = false; });
-    this.els.playerNameInput.value = '';
-
-    // Reset stats display
-    this.updateHealth(100);
-    this.updateInventory([]);
-    this.updateTurn(0);
-
-    this.showScreen('start');
-    this.announce('Starting a new adventure. Enter your name and choose a genre.');
+    this.showScreen("start");
+    this.els.playerName.focus();
   },
 
-  /* ----------------------------------------------------------
-     2h. Narrate (Text-to-Speech)
-     ---------------------------------------------------------- */
+  /* --- Typewriter --- */
+  async typewrite(text) {
+    this.cancelTypewriter();
 
-  async handleNarrate() {
-    // Get the most recent narrative text from history
-    if (this.history.length === 0) {
-      this.showGameError('No narrative to read aloud yet.');
-      return;
+    // Add separator if there's existing content
+    const hasContent = this.els.narrative.querySelector(".narrative-entry");
+    if (hasContent) {
+      const sep = document.createElement("hr");
+      sep.className = "narrative-separator";
+      this.els.narrative.appendChild(sep);
     }
 
-    const lastEntry = this.history[this.history.length - 1];
-    const narrativeText = lastEntry.narrative;
+    const entry = document.createElement("div");
+    entry.className = "narrative-entry";
+    this.els.narrative.appendChild(entry);
 
-    if (!narrativeText) {
-      this.showGameError('No narrative text available to narrate.');
-      return;
-    }
+    // Remove placeholder
+    const placeholder = this.els.narrative.querySelector(".narrative-placeholder");
+    if (placeholder) placeholder.remove();
 
-    // Disable button and show narrating state
-    this.els.btnNarrate.disabled = true;
-    this.els.btnNarrate.classList.add('btn-narrating');
-
-    try {
-      const data = await API.narrateAudio(narrativeText);
-      const audio = new Audio('data:audio/mp3;base64,' + data.audio);
-
-      audio.addEventListener('ended', () => {
-        this.els.btnNarrate.disabled = false;
-        this.els.btnNarrate.classList.remove('btn-narrating');
-      });
-
-      audio.addEventListener('error', () => {
-        this.els.btnNarrate.disabled = false;
-        this.els.btnNarrate.classList.remove('btn-narrating');
-        this.showGameError('Failed to play narration audio.');
-      });
-
-      audio.play();
-    } catch (error) {
-      this.els.btnNarrate.disabled = false;
-      this.els.btnNarrate.classList.remove('btn-narrating');
-      this.showGameError(error.message || 'Narration is currently unavailable. The TTS service may not be enabled.');
-    }
-  },
-
-  /* ----------------------------------------------------------
-     2i. Typewriter Effect
-     ---------------------------------------------------------- */
-
-  /**
-   * Render text character-by-character into the narrative area.
-   * Returns a promise that resolves when complete (or skipped).
-   * @param {string} text
-   * @returns {Promise<void>}
-   */
-  typewriteNarrative(text) {
     return new Promise((resolve) => {
-      this.cancelTypewriter();
+      this.typewriterResolve = resolve;
+      let i = 0;
+      const cursor = document.createElement("span");
+      cursor.className = "typewriter-cursor";
+      entry.appendChild(cursor);
 
-      const p = document.createElement('p');
-      p.classList.add('narrative-entry');
-      const textNode = document.createTextNode('');
-      p.appendChild(textNode);
-
-      // Cursor element
-      const cursor = document.createElement('span');
-      cursor.classList.add('typewriter-cursor');
-      cursor.setAttribute('aria-hidden', 'true');
-      p.appendChild(cursor);
-
-      this.els.narrative.appendChild(p);
-      this.scrollNarrativeToBottom();
-
-      const chars = Array.from(text);
-      let index = 0;
-
-      this.typewriterResolve = () => {
-        // Complete the text instantly
-        textNode.textContent = text;
-        cursor.remove();
-        this.scrollNarrativeToBottom();
-        resolve();
-      };
-
-      const tick = () => {
-        if (index < chars.length) {
-          textNode.textContent += chars[index];
-          index++;
-          this.scrollNarrativeToBottom();
-          this.typewriterTimer = setTimeout(tick, this.typewriterSpeed);
+      this.typewriterTimer = setInterval(() => {
+        if (i < text.length) {
+          cursor.before(document.createTextNode(text[i]));
+          i++;
+          this.els.narrative.scrollTop = this.els.narrative.scrollHeight;
         } else {
-          // Finished naturally
-          cursor.remove();
+          clearInterval(this.typewriterTimer);
           this.typewriterTimer = null;
+          cursor.remove();
           this.typewriterResolve = null;
           resolve();
         }
-      };
-
-      tick();
+      }, this.typewriterSpeed);
     });
   },
 
   skipTypewriter() {
+    if (!this.typewriterTimer) return;
+    clearInterval(this.typewriterTimer);
+    this.typewriterTimer = null;
+    const cursor = this.els.narrative.querySelector(".typewriter-cursor");
+    if (cursor) cursor.remove();
     if (this.typewriterResolve) {
-      clearTimeout(this.typewriterTimer);
-      this.typewriterTimer = null;
-      const fn = this.typewriterResolve;
+      this.typewriterResolve();
       this.typewriterResolve = null;
-      fn();
+    }
+    // Fill remaining text from last history entry
+    const lastEntry = this.els.narrative.querySelector(".narrative-entry:last-child");
+    if (lastEntry && this.history.length > 0) {
+      const lastText = this.history[this.history.length - 1].narrative;
+      lastEntry.textContent = lastText;
     }
   },
 
   cancelTypewriter() {
     if (this.typewriterTimer) {
-      clearTimeout(this.typewriterTimer);
+      clearInterval(this.typewriterTimer);
       this.typewriterTimer = null;
     }
-    this.typewriterResolve = null;
-  },
-
-  addNarrativeSeparator() {
-    const hr = document.createElement('hr');
-    hr.classList.add('narrative-separator');
-    hr.setAttribute('aria-hidden', 'true');
-    this.els.narrative.appendChild(hr);
-  },
-
-  scrollNarrativeToBottom() {
-    const el = this.els.narrative;
-    el.scrollTop = el.scrollHeight;
-  },
-
-  /* ----------------------------------------------------------
-     2i. UI Update Helpers
-     ---------------------------------------------------------- */
-
-  updateHealth(value) {
-    this.health = Math.max(0, Math.min(value, this.maxHealth));
-    const pct = Math.round((this.health / this.maxHealth) * 100);
-
-    this.els.healthBar.style.width = pct + '%';
-    this.els.healthText.textContent = this.health;
-
-    // Update ARIA
-    this.els.healthBarWrapper.setAttribute('aria-valuenow', this.health);
-
-    // Color class
-    this.els.healthBar.classList.remove('health--high', 'health--mid', 'health--low');
-    if (pct > 60) {
-      this.els.healthBar.classList.add('health--high');
-    } else if (pct > 30) {
-      this.els.healthBar.classList.add('health--mid');
-    } else {
-      this.els.healthBar.classList.add('health--low');
+    if (this.typewriterResolve) {
+      this.typewriterResolve();
+      this.typewriterResolve = null;
     }
   },
 
-  updateInventory(items) {
-    this.inventory = items;
-    const container = this.els.inventory;
-    container.innerHTML = '';
-
-    if (!items || items.length === 0) {
-      const empty = document.createElement('span');
-      empty.className = 'inventory-empty';
-      empty.setAttribute('role', 'listitem');
-      empty.textContent = 'Empty';
-      container.appendChild(empty);
-      return;
-    }
-
-    items.forEach((item) => {
-      const chip = document.createElement('span');
-      chip.className = 'inventory-item';
-      chip.setAttribute('role', 'listitem');
-      chip.textContent = item;
-      container.appendChild(chip);
+  /* --- UI Updates --- */
+  updateHearts(health) {
+    const hearts = this.els.heartsDisplay.querySelectorAll(".heart");
+    const pct = health / this.maxHealth;
+    hearts.forEach((heart, i) => {
+      const threshold = (i + 1) / hearts.length;
+      heart.className = "heart";
+      if (pct >= threshold) {
+        heart.classList.add("heart--full");
+        heart.textContent = "\u2764\uFE0F";
+      } else if (pct >= threshold - (1 / hearts.length / 2)) {
+        heart.classList.add("heart--half");
+        heart.textContent = "\u2764\uFE0F";
+      } else {
+        heart.classList.add("heart--empty");
+        heart.textContent = "\u{1F5A4}";
+      }
     });
+    this.els.healthText.textContent = health;
+    this.els.heartsDisplay.setAttribute("aria-valuenow", health);
+
+    // Color the health number
+    if (health > 60) this.els.healthText.style.color = "var(--color-neon-green)";
+    else if (health > 30) this.els.healthText.style.color = "var(--color-neon-yellow)";
+    else this.els.healthText.style.color = "var(--color-danger)";
+  },
+
+  updateXP(xp) {
+    this.els.xpValue.textContent = xp;
   },
 
   updateTurn(turn) {
-    this.turn = turn;
     this.els.turnCounter.textContent = turn;
   },
 
-  renderChoices(choices) {
-    const container = this.els.choices;
-    container.innerHTML = '';
-
-    choices.forEach((choiceText, i) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'choice-btn';
-      btn.disabled = this.isLoading;
-      btn.setAttribute('aria-label', `Choice ${i + 1}: ${choiceText}`);
-
-      const num = document.createElement('span');
-      num.className = 'choice-number';
-      num.setAttribute('aria-hidden', 'true');
-      num.textContent = i + 1;
-
-      const text = document.createElement('span');
-      text.className = 'choice-text';
-      text.textContent = choiceText;
-
-      btn.appendChild(num);
-      btn.appendChild(text);
-
-      btn.addEventListener('click', () => this.handleChoiceAction(choiceText));
-
-      container.appendChild(btn);
-    });
-
-    // Focus first choice for accessibility
-    requestAnimationFrame(() => {
-      const first = container.querySelector('.choice-btn');
-      if (first) first.focus();
+  updateInventory(items) {
+    this.els.inventoryGrid.innerHTML = "";
+    if (!items || items.length === 0) {
+      this.els.inventoryGrid.innerHTML = '<span class="inventory-empty" role="listitem">Empty backpack</span>';
+      return;
+    }
+    items.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "inventory-item";
+      div.setAttribute("role", "listitem");
+      div.innerHTML = `<span class="inventory-item-icon">${Scene.getItemIcon(item)}</span><span class="inventory-item-name">${this.escapeHtml(item)}</span>`;
+      this.els.inventoryGrid.appendChild(div);
     });
   },
 
-  /* ----------------------------------------------------------
-     2j. Loading State
-     ---------------------------------------------------------- */
+  updateAchievements(achievements) {
+    this.els.achievementsGrid.innerHTML = "";
+    if (!achievements || achievements.length === 0) {
+      this.els.achievementsGrid.innerHTML = '<span class="achievements-empty" role="listitem">No badges yet</span>';
+      return;
+    }
+    achievements.forEach(name => {
+      const badge = document.createElement("span");
+      badge.className = "achievement-badge";
+      badge.setAttribute("role", "listitem");
+      badge.innerHTML = `<span class="achievement-badge-icon">${Scene.getAchievementIcon(name)}</span> ${this.escapeHtml(name)}`;
+      this.els.achievementsGrid.appendChild(badge);
+    });
+  },
 
-  setLoading(loading) {
-    this.isLoading = loading;
+  renderChoices(choices, icons) {
+    this.els.choices.innerHTML = "";
+    if (!choices || choices.length === 0) return;
+    choices.forEach((text, i) => {
+      const btn = document.createElement("button");
+      btn.className = "choice-btn";
+      btn.type = "button";
+      const iconKey = icons[i] || "";
+      const iconEmoji = Scene.getChoiceIcon(iconKey);
+      btn.innerHTML = `<span class="choice-number">${i + 1}</span><span class="choice-icon">${iconEmoji}</span><span class="choice-text">${this.escapeHtml(text)}</span>`;
+      btn.setAttribute("aria-label", `Choice ${i + 1}: ${text}`);
+      btn.addEventListener("click", () => this.handleChoiceAction(text));
+      this.els.choices.appendChild(btn);
+    });
+  },
 
-    // Show/hide spinner
-    this.els.loadingIndicator.hidden = !loading;
+  /* --- Overlays --- */
+  showEncounter(visual) {
+    const npcIcons = { friendly: "\u{1F91D}", hostile: "\u{1F47E}", neutral: "\u{1F464}" };
+    this.els.encounterIcon.textContent = npcIcons[visual.npc_type] || "\u{1F464}";
+    this.els.encounterName.textContent = visual.npc_name;
+    this.els.encounterType.textContent = visual.npc_type || "unknown";
+    this.els.encounterOverlay.hidden = false;
+    setTimeout(() => { this.els.encounterOverlay.hidden = true; }, 2500);
+  },
 
-    // Disable/enable interactive elements
-    const choiceBtns = this.els.choices.querySelectorAll('.choice-btn');
-    choiceBtns.forEach((btn) => { btn.disabled = loading; });
+  showItemFound(itemName) {
+    this.els.itemFoundName.textContent = itemName;
+    this.els.itemFoundOverlay.hidden = false;
+    Sound.item();
+    setTimeout(() => { this.els.itemFoundOverlay.hidden = true; }, 2500);
+  },
 
-    this.els.btnCustomAction.disabled = loading;
-    this.els.customActionInput.disabled = loading;
+  showAchievementPopup(name) {
+    this.els.achievementText.textContent = `Badge: ${name}!`;
+    this.els.achievementPopup.hidden = false;
+    Sound.achieve();
+    A11y.announce(`Achievement unlocked: ${name}`);
+    setTimeout(() => { this.els.achievementPopup.hidden = true; }, 3000);
+  },
 
-    if (loading) {
-      this.els.choices.classList.add('actions-disabled');
-    } else {
-      this.els.choices.classList.remove('actions-disabled');
+  /* --- Effects --- */
+  shakeScreen() {
+    const el = this.els.gameScreen;
+    el.classList.add("screen-shake");
+    setTimeout(() => el.classList.remove("screen-shake"), 500);
+  },
+
+  /* --- Narration (TTS) --- */
+  async handleNarrate() {
+    const text = this.history.length > 0 ? this.history[this.history.length - 1].narrative : "";
+    if (!text) return;
+
+    this.els.btnNarrate.disabled = true;
+    this.els.btnNarrate.textContent = "Playing...";
+
+    try {
+      // Translate if needed
+      let narrateText = text;
+      if (this.language !== "en") {
+        const result = await API.translateText(text, this.language);
+        if (result) narrateText = result.translated_text;
+      }
+
+      const audio = await API.narrateAudio(narrateText);
+      if (audio) {
+        const audioEl = new Audio("data:audio/mp3;base64," + audio);
+        audioEl.play();
+        audioEl.addEventListener("ended", () => {
+          this.els.btnNarrate.disabled = false;
+          this.els.btnNarrate.innerHTML = '<span aria-hidden="true">&#128266;</span> Listen';
+        });
+      } else {
+        this.els.btnNarrate.disabled = false;
+        this.els.btnNarrate.innerHTML = '<span aria-hidden="true">&#128266;</span> Listen';
+      }
+    } catch (_) {
+      this.els.btnNarrate.disabled = false;
+      this.els.btnNarrate.innerHTML = '<span aria-hidden="true">&#128266;</span> Listen';
     }
   },
 
-  /* ----------------------------------------------------------
-     2k. History
-     ---------------------------------------------------------- */
-
+  /* --- History --- */
   toggleHistory() {
-    const panel = this.els.historyPanel;
-    const isOpen = !panel.hidden;
-
-    if (isOpen) {
-      panel.hidden = true;
-      this.els.btnHistory.setAttribute('aria-expanded', 'false');
-    } else {
-      this.renderHistory();
-      panel.hidden = false;
-      this.els.btnHistory.setAttribute('aria-expanded', 'true');
-      panel.focus();
-    }
+    const open = this.els.historyPanel.hidden;
+    this.els.historyPanel.hidden = !open;
+    this.els.btnHistory.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) this.renderHistory();
   },
 
   renderHistory() {
-    const container = this.els.historyContent;
-    container.innerHTML = '';
-
-    if (this.history.length === 0) {
-      container.textContent = 'No history yet.';
-      return;
-    }
-
-    this.history.forEach((entry) => {
-      const div = document.createElement('div');
-      div.className = 'history-entry';
-
-      const label = document.createElement('span');
-      label.className = 'history-turn-label';
-      label.textContent = `Turn ${entry.turn}`;
-      div.appendChild(label);
-
-      if (entry.action) {
-        const action = document.createElement('div');
-        action.className = 'history-action';
-        action.textContent = `Action: ${entry.action}`;
-        div.appendChild(action);
-      }
-
-      const narr = document.createElement('div');
-      narr.textContent = entry.narrative;
-      div.appendChild(narr);
-
-      container.appendChild(div);
+    this.els.historyContent.innerHTML = "";
+    this.history.forEach(entry => {
+      const div = document.createElement("div");
+      div.className = "history-entry";
+      let html = `<div class="history-turn">Turn ${entry.turn}</div>`;
+      if (entry.action) html += `<div class="history-action">You chose: ${this.escapeHtml(entry.action)}</div>`;
+      html += `<div class="history-narrative">${this.escapeHtml(entry.narrative.slice(0, 200))}${entry.narrative.length > 200 ? "..." : ""}</div>`;
+      div.innerHTML = html;
+      this.els.historyContent.appendChild(div);
     });
   },
 
-  /* ----------------------------------------------------------
-     2l. Genre Theme
-     ---------------------------------------------------------- */
+  /* --- Theme --- */
+  applyTheme(adventure) {
+    document.body.className = "";
+    document.body.classList.add("theme-" + adventure);
+  },
 
-  applyGenreTheme(genre) {
-    // Remove all existing theme classes
-    document.body.classList.remove(
-      'theme-fantasy', 'theme-sci-fi', 'theme-mystery',
-      'theme-horror', 'theme-pirate'
-    );
-    if (genre) {
-      document.body.classList.add(`theme-${genre}`);
+  /* --- Sound Toggle --- */
+  toggleSound() {
+    Sound.enabled = !Sound.enabled;
+    const btn = this.els.btnSoundToggle;
+    btn.setAttribute("aria-pressed", Sound.enabled ? "true" : "false");
+    btn.querySelector(".sound-icon").textContent = Sound.enabled ? "\u{1F50A}" : "\u{1F507}";
+  },
+
+  /* --- Loading --- */
+  setLoading(loading) {
+    this.isLoading = loading;
+    this.els.loadingIndicator.hidden = !loading;
+    this.els.btnStart.disabled = loading;
+    this.els.btnCustomAction.disabled = loading;
+    if (loading) {
+      this.els.choices.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
     }
   },
 
-  formatGenreName(genre) {
-    const names = {
-      fantasy: 'Fantasy',
-      'sci-fi': 'Sci-Fi',
-      mystery: 'Mystery',
-      horror: 'Horror',
-      pirate: 'Pirate',
-    };
-    return names[genre] || genre || '—';
+  /* --- Error --- */
+  showError(el, message) {
+    el.textContent = message;
+    el.hidden = false;
+    setTimeout(() => { el.hidden = true; }, 8000);
   },
 
-  /* ----------------------------------------------------------
-     2m. Error Handling
-     ---------------------------------------------------------- */
-
-  showStartError(message) {
-    this.els.startError.textContent = message;
-    this.els.startError.hidden = false;
-    this.announce(message);
-  },
-
-  hideStartError() {
-    this.els.startError.textContent = '';
-    this.els.startError.hidden = true;
-  },
-
-  showGameError(message) {
-    this.els.gameError.textContent = message;
-    this.els.gameError.hidden = false;
-    this.announce(`Error: ${message}`);
-  },
-
-  hideGameError() {
-    this.els.gameError.textContent = '';
-    this.els.gameError.hidden = true;
-  },
-
-  /* ----------------------------------------------------------
-     2n. Accessibility — Screen Reader Announcements
-     ---------------------------------------------------------- */
-
-  announce(message) {
-    const el = this.els.srAnnouncer;
-    // Clear then set to trigger aria-live announcement
-    el.textContent = '';
-    requestAnimationFrame(() => {
-      el.textContent = message;
-    });
+  /* --- Util --- */
+  escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
   },
 };
 
 /* ============================================================
-   3. Keyboard Shortcut Support
+   Bootstrap
    ============================================================ */
-
-document.addEventListener('keydown', (e) => {
-  // Number keys 1-9 to select choices quickly during game
-  if (
-    Game.screens.game &&
-    !Game.screens.game.hidden &&
-    !Game.isLoading &&
-    e.key >= '1' && e.key <= '9'
-  ) {
-    const index = parseInt(e.key, 10) - 1;
-    const choiceBtns = Game.els.choices.querySelectorAll('.choice-btn');
-    if (choiceBtns[index]) {
-      e.preventDefault();
-      choiceBtns[index].click();
-    }
-  }
-});
-
-/* ============================================================
-   4. Bootstrap
-   ============================================================ */
-
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   Game.init();
 });

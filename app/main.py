@@ -1,11 +1,11 @@
 """QuestForge application entry point.
 
 Configures FastAPI with middleware, routes, and static file serving.
-Integrates Google Cloud services: Gemini AI, Firestore, TTS, Cloud Logging.
+Integrates Google Cloud services: Gemini AI, Firestore, TTS, Translate,
+Imagen, Cloud Storage, and Cloud Logging.
 """
 
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -26,15 +26,31 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    """Manage application startup and shutdown lifecycle."""
+    """Manage application startup and shutdown lifecycle.
+
+    Logs enabled Google Cloud service integrations at startup and
+    performs clean shutdown logging.
+    """
+    enabled_services = [
+        name
+        for name, flag in [
+            ("Firestore", settings.enable_firestore),
+            ("TTS", settings.enable_tts),
+            ("Translate", settings.enable_translate),
+            ("Storage", settings.enable_storage),
+            ("Imagen", settings.enable_imagen),
+        ]
+        if flag
+    ]
     logger.info(
-        "QuestForge %s starting (firestore=%s, tts=%s)",
+        "QuestForge %s starting — enabled services: %s",
         settings.app_version,
-        settings.enable_firestore,
-        settings.enable_tts,
+        ", ".join(enabled_services) or "core only",
     )
+    if not settings.google_api_key:
+        logger.warning("GOOGLE_API_KEY is not set — Gemini calls will fail")
     yield
-    logger.info("QuestForge shutting down")
+    logger.info("QuestForge %s shutting down", settings.app_version)
 
 
 app = FastAPI(
@@ -46,7 +62,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware stack (applied in reverse order)
+# ---------------------------------------------------------------------------
+# Middleware stack — applied in reverse order of addition.
+#   Request flow: CORS → GZip → RateLimit → Logging → SecurityHeaders
+# ---------------------------------------------------------------------------
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, max_requests=settings.rate_limit_per_minute)
@@ -71,5 +90,9 @@ app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=settings.port,
+        reload=True,
+    )

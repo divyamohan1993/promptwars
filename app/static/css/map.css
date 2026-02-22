@@ -1,0 +1,75 @@
+/* ============================================================
+   QuestForge: The Upside Down — Map Panel Styles
+   Uses CSS custom properties from the main style.css design system.
+   ============================================================ */
+
+.map-panel {
+  background: var(--color-surface, #1a1a24);
+  border: 1px solid var(--color-border, #2a2a3a);
+  border-radius: var(--radius-md, 0.75rem);
+  padding: var(--space-md, 0.75rem);
+  margin-bottom: var(--space-md, 1rem);
+}
+
+.map-panel .panel-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.65rem;
+  color: var(--color-accent, #cc2200);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 var(--space-sm, 0.5rem) 0;
+}
+
+/* Canvas container */
+.map-panel canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm, 0.5rem);
+  background: var(--color-bg, #0d0d14);
+  border: 1px solid var(--color-border, #2a2a3a);
+}
+
+/* Map legend */
+.map-legend {
+  display: flex;
+  gap: var(--space-md, 0.75rem);
+  margin-top: var(--space-sm, 0.5rem);
+  font-size: 0.65rem;
+  color: var(--color-text-muted, #888);
+  font-family: "Press Start 2P", monospace;
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.25rem);
+}
+
+.map-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.map-legend-dot--current {
+  background: var(--color-accent, #cc2200);
+  box-shadow: 0 0 6px var(--color-accent, #cc2200);
+}
+
+.map-legend-dot--visited {
+  background: var(--color-neon-green, #39ff14);
+}
+
+.map-legend-dot--unvisited {
+  background: var(--color-text-muted, #888);
+  opacity: 0.5;
+}
+
+/* Responsive: shrink map on very small screens */
+@media (max-width: 480px) {
+  .map-panel canvas {
+    height: 120px;
+  }
+}

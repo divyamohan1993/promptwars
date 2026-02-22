@@ -14,10 +14,26 @@ def mock_gemini_response():
     return {
         "narrative": "You find yourself in a dark, enchanted forest.",
         "choices": ["Follow the path", "Climb a tree", "Search the ground"],
+        "choice_icons": ["flashlight", "climb", "magnifying-glass"],
         "health_delta": 0,
         "new_items": ["rusty sword"],
         "removed_items": [],
         "is_complete": False,
+        "scene_visual": {
+            "scene_type": "exploration",
+            "mood": "mysterious",
+            "location_name": "Enchanted Forest",
+            "location_icon": "forest",
+            "npc_name": None,
+            "npc_type": None,
+            "item_found": "rusty sword",
+            "weather": "foggy",
+        },
+        "map_update": {
+            "new_location": "Enchanted Forest",
+            "location_icon": "forest",
+            "connects_to_previous": True,
+        },
     }
 
 

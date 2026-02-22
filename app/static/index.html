@@ -3,10 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="QuestForge - An AI-Powered Text Adventure game built with Google Gemini. Choose your genre and embark on a unique adventure.">
-  <meta name="theme-color" content="#0f0e17">
-  <title>QuestForge — AI-Powered Text Adventure</title>
+  <meta name="description" content="QuestForge: The Upside Down — A Stranger Things inspired interactive adventure game powered by Google Gemini AI.">
+  <meta name="theme-color" content="#8b0000">
+  <meta name="color-scheme" content="dark">
+  <title>QuestForge: The Upside Down</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/map.css">
 </head>
 <body>
   <!-- Skip to content link for accessibility -->
@@ -15,14 +21,52 @@
   <!-- Live region for screen reader announcements -->
   <div id="sr-announcer" class="sr-only" aria-live="assertive" aria-atomic="true" role="status"></div>
 
+  <!-- Christmas Lights Decoration -->
+  <div class="christmas-lights" aria-hidden="true">
+    <span class="light light--red"></span>
+    <span class="light light--yellow"></span>
+    <span class="light light--green"></span>
+    <span class="light light--blue"></span>
+    <span class="light light--red"></span>
+    <span class="light light--yellow"></span>
+    <span class="light light--green"></span>
+    <span class="light light--blue"></span>
+    <span class="light light--red"></span>
+    <span class="light light--yellow"></span>
+    <span class="light light--green"></span>
+    <span class="light light--blue"></span>
+    <span class="light light--red"></span>
+    <span class="light light--yellow"></span>
+    <span class="light light--green"></span>
+    <span class="light light--blue"></span>
+    <span class="light light--red"></span>
+    <span class="light light--yellow"></span>
+    <span class="light light--green"></span>
+    <span class="light light--blue"></span>
+  </div>
+
   <!-- Header -->
   <header class="site-header" role="banner">
     <div class="header-inner">
-      <h1 class="site-title">
-        <span class="title-icon" aria-hidden="true">&#9876;</span>
+      <h1 class="site-title flickering-title">
         QuestForge
       </h1>
-      <p class="site-tagline">AI-Powered Text Adventure</p>
+      <p class="site-tagline">The Upside Down</p>
+      <div class="header-controls">
+        <select id="language-select" class="language-select" aria-label="Select language">
+          <option value="en" lang="en">English</option>
+          <option value="es" lang="es">Espa&#241;ol</option>
+          <option value="fr" lang="fr">Fran&#231;ais</option>
+          <option value="de" lang="de">Deutsch</option>
+          <option value="ja" lang="ja">&#26085;&#26412;&#35486;</option>
+          <option value="hi" lang="hi">&#2361;&#2367;&#2344;&#2381;&#2342;&#2368;</option>
+          <option value="pt" lang="pt">Portugu&#234;s</option>
+          <option value="zh" lang="zh">&#20013;&#25991;</option>
+        </select>
+        <button id="btn-sound-toggle" class="btn btn--icon" type="button" aria-label="Toggle sound effects" aria-pressed="true">
+          <span class="sound-icon" aria-hidden="true">&#128266;</span>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -33,68 +77,60 @@
     <section id="start-screen" class="screen screen--active" aria-labelledby="start-heading">
       <div class="container">
         <div class="welcome-card">
-          <h2 id="start-heading" class="screen-heading">Embark on Your Adventure</h2>
+          <h2 id="start-heading" class="screen-heading">Choose Your Adventure</h2>
           <p class="welcome-text">
-            Welcome, brave adventurer! QuestForge uses the power of Google Gemini AI to craft
-            a unique, branching narrative just for you. Every choice matters, every path is different.
-            Enter your name, choose your genre, and let the quest begin.
+            Strange things are happening in Hawkins! Pick your name, choose an adventure,
+            and be the hero of your own story.
           </p>
 
           <!-- Player Name Input -->
           <div class="form-group">
-            <label for="player-name" class="form-label">Your Name</label>
+            <label for="player-name" class="form-label">Your Hero Name</label>
             <input
               type="text"
               id="player-name"
               class="form-input"
-              placeholder="Enter your adventurer name..."
+              placeholder="Type your name here..."
               required
               autocomplete="off"
-              maxlength="30"
+              maxlength="50"
               aria-required="true"
               aria-describedby="name-hint"
             >
-            <span id="name-hint" class="form-hint">Choose a name for your character (required)</span>
+            <span id="name-hint" class="form-hint">What should we call you, hero?</span>
           </div>
 
-          <!-- Genre Selection -->
-          <fieldset class="genre-fieldset">
-            <legend class="genre-legend">Choose Your Genre</legend>
-            <div class="genre-grid" role="radiogroup" aria-label="Game genre selection">
+          <!-- Adventure Selection -->
+          <fieldset class="adventure-fieldset">
+            <legend class="adventure-legend">Pick Your Adventure</legend>
+            <div class="adventure-grid" role="radiogroup" aria-label="Adventure selection">
 
-              <label class="genre-card" data-genre="fantasy">
-                <input type="radio" name="genre" value="fantasy" class="genre-radio sr-only" aria-label="Fantasy genre">
-                <span class="genre-icon" aria-hidden="true">&#129668;</span>
-                <span class="genre-name">Fantasy</span>
-                <span class="genre-desc">Swords, sorcery &amp; dragons</span>
+              <label class="adventure-card" data-adventure="hawkins-investigation">
+                <input type="radio" name="adventure" value="hawkins-investigation" class="adventure-radio sr-only" aria-label="Hawkins Investigation">
+                <span class="adventure-icon" aria-hidden="true">&#128294;</span>
+                <span class="adventure-name">Hawkins Mystery</span>
+                <span class="adventure-desc">Investigate strange lights and sounds!</span>
               </label>
 
-              <label class="genre-card" data-genre="sci-fi">
-                <input type="radio" name="genre" value="sci-fi" class="genre-radio sr-only" aria-label="Sci-Fi genre">
-                <span class="genre-icon" aria-hidden="true">&#128640;</span>
-                <span class="genre-name">Sci-Fi</span>
-                <span class="genre-desc">Space exploration &amp; tech</span>
+              <label class="adventure-card" data-adventure="upside-down">
+                <input type="radio" name="adventure" value="upside-down" class="adventure-radio sr-only" aria-label="The Upside Down">
+                <span class="adventure-icon" aria-hidden="true">&#127744;</span>
+                <span class="adventure-name">Upside Down</span>
+                <span class="adventure-desc">Explore a spooky mirror world!</span>
               </label>
 
-              <label class="genre-card" data-genre="mystery">
-                <input type="radio" name="genre" value="mystery" class="genre-radio sr-only" aria-label="Mystery genre">
-                <span class="genre-icon" aria-hidden="true">&#128270;</span>
-                <span class="genre-name">Mystery</span>
-                <span class="genre-desc">Clues, secrets &amp; intrigue</span>
+              <label class="adventure-card" data-adventure="hawkins-lab">
+                <input type="radio" name="adventure" value="hawkins-lab" class="adventure-radio sr-only" aria-label="Hawkins Lab Escape">
+                <span class="adventure-icon" aria-hidden="true">&#128300;</span>
+                <span class="adventure-name">Lab Escape</span>
+                <span class="adventure-desc">Use your powers to escape!</span>
               </label>
 
-              <label class="genre-card" data-genre="horror">
-                <input type="radio" name="genre" value="horror" class="genre-radio sr-only" aria-label="Horror genre">
-                <span class="genre-icon" aria-hidden="true">&#128128;</span>
-                <span class="genre-name">Horror</span>
-                <span class="genre-desc">Fear, survival &amp; the unknown</span>
-              </label>
-
-              <label class="genre-card" data-genre="pirate">
-                <input type="radio" name="genre" value="pirate" class="genre-radio sr-only" aria-label="Pirate genre">
-                <span class="genre-icon" aria-hidden="true">&#9876;&#65039;</span>
-                <span class="genre-name">Pirate</span>
-                <span class="genre-desc">High seas &amp; treasure hunts</span>
+              <label class="adventure-card" data-adventure="dnd-campaign">
+                <input type="radio" name="adventure" value="dnd-campaign" class="adventure-radio sr-only" aria-label="D&amp;D Campaign">
+                <span class="adventure-icon" aria-hidden="true">&#127922;</span>
+                <span class="adventure-name">D&amp;D Quest</span>
+                <span class="adventure-desc">Roll dice and fight monsters!</span>
               </label>
 
             </div>
@@ -104,9 +140,9 @@
           <div id="start-error" class="error-message" role="alert" aria-live="polite" hidden></div>
 
           <!-- Begin Quest Button -->
-          <button id="btn-start" class="btn btn--primary btn--large" type="button" aria-label="Begin your quest">
-            <span class="btn-text">Begin Quest</span>
-            <span class="btn-icon" aria-hidden="true">&#10132;</span>
+          <button id="btn-start" class="btn btn--primary btn--large" type="button" aria-label="Begin your adventure">
+            <span class="btn-text">Start Adventure!</span>
+            <span class="btn-icon" aria-hidden="true">&#9889;</span>
           </button>
         </div>
       </div>
@@ -115,25 +151,25 @@
     <!-- ==================== GAME SCREEN ==================== -->
     <section id="game-screen" class="screen" aria-labelledby="game-heading" hidden>
       <div class="container game-layout">
+        <h2 id="game-heading" class="sr-only" tabindex="-1">Game in Progress</h2>
 
-        <!-- Stats Bar -->
+        <!-- Stats Bar with Hearts -->
         <div class="stats-bar" role="region" aria-label="Player statistics">
-          <h2 id="game-heading" class="sr-only">Game in Progress</h2>
-
-          <div class="stat stat--health">
+          <div class="stat stat--hearts">
             <span class="stat-label" id="health-label">Health</span>
-            <div class="health-bar-wrapper" role="progressbar" aria-labelledby="health-label" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
-              <div class="health-bar" id="health-bar" style="width: 100%;">
-                <span class="health-text" id="health-text">100</span>
-              </div>
+            <div class="hearts-display" id="hearts-display" role="img" aria-labelledby="health-label" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+              <span class="heart heart--full" aria-hidden="true">&#10084;&#65039;</span>
+              <span class="heart heart--full" aria-hidden="true">&#10084;&#65039;</span>
+              <span class="heart heart--full" aria-hidden="true">&#10084;&#65039;</span>
+              <span class="heart heart--full" aria-hidden="true">&#10084;&#65039;</span>
+              <span class="heart heart--full" aria-hidden="true">&#10084;&#65039;</span>
             </div>
+            <span class="health-number" id="health-text">100</span>
           </div>
 
-          <div class="stat stat--inventory">
-            <span class="stat-label">Inventory</span>
-            <div class="inventory-list" id="inventory" role="list" aria-label="Inventory items">
-              <span class="inventory-empty" role="listitem">Empty</span>
-            </div>
+          <div class="stat stat--xp">
+            <span class="stat-label">XP</span>
+            <span class="xp-value" id="xp-value" aria-label="Experience points">0</span>
           </div>
 
           <div class="stat stat--turn">
@@ -142,48 +178,87 @@
           </div>
         </div>
 
-        <!-- Narrative Area -->
-        <div class="narrative-wrapper">
-          <div
-            id="narrative"
-            class="narrative"
-            role="log"
-            aria-label="Story narrative"
-            aria-live="polite"
-            tabindex="0"
-          >
-            <p class="narrative-placeholder">Your adventure awaits...</p>
+        <!-- Game Panels -->
+        <div class="game-panels">
+
+          <!-- Left Panel: Scene + Narrative -->
+          <div class="scene-panel">
+            <!-- Scene Card -->
+            <div class="scene-card" id="scene-card" role="img" aria-label="Scene illustration">
+              <div class="scene-bg" id="scene-bg"></div>
+              <div class="scene-overlay">
+                <span class="scene-location" id="scene-location"></span>
+                <span class="scene-mood-icon" id="scene-mood-icon" aria-hidden="true"></span>
+              </div>
+              <img id="scene-image" class="scene-generated-image" alt="Scene illustration" hidden>
+            </div>
+
+            <!-- Narrative Area -->
+            <div class="narrative-wrapper">
+              <div
+                id="narrative"
+                class="narrative"
+                role="log"
+                aria-label="Story narrative"
+                aria-live="polite"
+                tabindex="0"
+              >
+                <p class="narrative-placeholder">Your adventure awaits...</p>
+              </div>
+
+              <div class="narrative-controls">
+                <button id="btn-narrate" class="btn btn--ghost btn--small" type="button" aria-label="Read story aloud">
+                  <span aria-hidden="true">&#128266;</span> Listen
+                </button>
+                <button id="btn-history" class="btn btn--ghost btn--small" type="button" aria-expanded="false" aria-controls="history-panel">
+                  <span aria-hidden="true">&#128220;</span> History
+                </button>
+              </div>
+
+              <!-- History Panel -->
+              <div id="history-panel" class="history-panel" role="region" aria-label="Story history" hidden>
+                <div id="history-content" class="history-content"></div>
+              </div>
+            </div>
           </div>
 
-          <button id="btn-narrate" class="btn btn--ghost btn--small" type="button" aria-label="Read narrative aloud">
-            <span aria-hidden="true">&#128264;</span> Narrate
-          </button>
+          <!-- Right Panel: Map + Inventory + Achievements -->
+          <div class="side-panel">
+            <!-- Mini Map -->
+            <div class="map-panel" id="map-panel" role="img" aria-label="Adventure map">
+              <h3 class="panel-title">Map</h3>
+              <canvas id="game-map" width="280" height="200" aria-label="Visual map of explored locations"></canvas>
+            </div>
 
-          <!-- History Toggle -->
-          <button
-            id="btn-history"
-            class="btn btn--ghost btn--small"
-            type="button"
-            aria-expanded="false"
-            aria-controls="history-panel"
-          >
-            <span aria-hidden="true">&#128220;</span> Story History
-          </button>
+            <!-- Visual Inventory Grid -->
+            <div class="inventory-panel">
+              <h3 class="panel-title">Inventory</h3>
+              <div class="inventory-grid" id="inventory-grid" role="list" aria-label="Inventory items">
+                <span class="inventory-empty" role="listitem">Empty backpack</span>
+              </div>
+            </div>
 
-          <!-- History Panel -->
-          <div id="history-panel" class="history-panel" role="region" aria-label="Story history" hidden>
-            <div id="history-content" class="history-content"></div>
+            <!-- Achievements -->
+            <div class="achievements-panel">
+              <h3 class="panel-title">Badges</h3>
+              <div class="achievements-grid" id="achievements-grid" role="list" aria-label="Achievement badges">
+                <span class="achievements-empty" role="listitem">No badges yet</span>
+              </div>
+            </div>
           </div>
+
         </div>
 
         <!-- Loading Indicator -->
         <div id="loading-indicator" class="loading" role="status" hidden>
-          <div class="loading-spinner" aria-hidden="true">
-            <span class="spinner-dot"></span>
-            <span class="spinner-dot"></span>
-            <span class="spinner-dot"></span>
+          <div class="loading-lights" aria-hidden="true">
+            <span class="loading-light"></span>
+            <span class="loading-light"></span>
+            <span class="loading-light"></span>
+            <span class="loading-light"></span>
+            <span class="loading-light"></span>
           </div>
-          <span class="loading-text">The quest master is weaving your fate...</span>
+          <span class="loading-text">The Upside Down is shifting...</span>
         </div>
 
         <!-- Choices Area -->
@@ -192,28 +267,50 @@
         </div>
 
         <!-- Free Input Area -->
-        <div class="free-input-area">
+        <div class="free-input-area" id="free-input-area">
           <label for="custom-action" class="sr-only">Type a custom action</label>
           <div class="input-row">
             <input
               type="text"
               id="custom-action"
               class="form-input form-input--action"
-              placeholder="Type your own action..."
+              placeholder="What do you want to do?"
               autocomplete="off"
               maxlength="200"
               aria-describedby="action-hint"
             >
             <button id="btn-custom-action" class="btn btn--secondary" type="button" aria-label="Submit custom action">
-              Custom Action
+              Go!
             </button>
           </div>
-          <span id="action-hint" class="form-hint">Or describe what you want to do in your own words</span>
+          <span id="action-hint" class="form-hint">Or type your own idea!</span>
         </div>
 
-        <!-- Error display for game screen -->
-        <div id="game-error" class="error-message" role="alert" aria-live="polite" hidden></div>
+        <!-- Encounter Overlay -->
+        <div id="encounter-overlay" class="encounter-overlay" hidden role="dialog" aria-label="Encounter">
+          <div class="encounter-card">
+            <div class="encounter-icon" id="encounter-icon" aria-hidden="true"></div>
+            <div class="encounter-name" id="encounter-name"></div>
+            <div class="encounter-type" id="encounter-type"></div>
+          </div>
+        </div>
 
+        <!-- Item Found Animation -->
+        <div id="item-found-overlay" class="item-found-overlay" hidden role="alert">
+          <div class="item-found-card">
+            <span class="item-found-sparkle" aria-hidden="true">&#10024;</span>
+            <span class="item-found-name" id="item-found-name"></span>
+          </div>
+        </div>
+
+        <!-- Achievement Popup -->
+        <div id="achievement-popup" class="achievement-popup" hidden role="alert">
+          <span class="achievement-star" aria-hidden="true">&#11088;</span>
+          <span class="achievement-text" id="achievement-text"></span>
+        </div>
+
+        <!-- Error display -->
+        <div id="game-error" class="error-message" role="alert" aria-live="polite" hidden></div>
       </div>
     </section>
 
@@ -222,35 +319,39 @@
       <div class="container">
         <div class="gameover-card">
           <div id="gameover-icon" class="gameover-icon" aria-hidden="true"></div>
-          <h2 id="gameover-heading" class="screen-heading"></h2>
+          <h2 id="gameover-heading" class="screen-heading" tabindex="-1"></h2>
           <p id="gameover-message" class="gameover-message"></p>
+
+          <!-- Achievements Earned -->
+          <div class="gameover-achievements" id="gameover-achievements" role="region" aria-label="Achievements earned">
+          </div>
 
           <!-- Stats Summary -->
           <div class="gameover-stats" role="region" aria-label="Game summary">
             <h3 class="gameover-stats-heading">Quest Summary</h3>
             <dl class="stats-summary">
               <div class="summary-item">
-                <dt>Turns Survived</dt>
+                <dt>Turns</dt>
                 <dd id="summary-turns">0</dd>
               </div>
               <div class="summary-item">
-                <dt>Final Health</dt>
+                <dt>Health</dt>
                 <dd id="summary-health">0</dd>
               </div>
               <div class="summary-item">
-                <dt>Items Collected</dt>
+                <dt>Items</dt>
                 <dd id="summary-items">0</dd>
               </div>
               <div class="summary-item">
-                <dt>Genre</dt>
-                <dd id="summary-genre">—</dd>
+                <dt>XP</dt>
+                <dd id="summary-xp">0</dd>
               </div>
             </dl>
           </div>
 
           <button id="btn-play-again" class="btn btn--primary btn--large" type="button" aria-label="Start a new adventure">
-            <span class="btn-text">Play Again</span>
-            <span class="btn-icon" aria-hidden="true">&#8635;</span>
+            <span class="btn-text">Play Again!</span>
+            <span class="btn-icon" aria-hidden="true">&#9889;</span>
           </button>
         </div>
       </div>
@@ -261,9 +362,20 @@
   <!-- Footer -->
   <footer class="site-footer" role="contentinfo">
     <p class="footer-credit">
-      Powered by <strong>Google Gemini</strong> &middot; Built for PromptWars Hackathon
+      Powered by
+      <strong>Google Gemini</strong> &middot;
+      <strong>Cloud Firestore</strong> &middot;
+      <strong>Cloud TTS</strong> &middot;
+      <strong>Cloud Translate</strong> &middot;
+      <strong>Vertex AI Imagen</strong> &middot;
+      <strong>Cloud Storage</strong>
+      <br>
+      Deployed on <strong>Google Cloud Run</strong> via <strong>Cloud Build</strong>
     </p>
   </footer>
+
+  <!-- Particle overlay for Upside Down effects -->
+  <div id="particle-overlay" class="particle-overlay" aria-hidden="true"></div>
 
   <script src="js/app.js"></script>
 </body>
